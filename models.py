@@ -1,7 +1,8 @@
+import os
+
 from sqlalchemy import create_engine, Column, Integer, String, Float
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
-import enum
 
 """SQLAlchemy models and DB session setup for SDN monitoring data.
 
@@ -49,7 +50,7 @@ class Packets_dropped(Base):
     Count = Column(Integer)
 
 # Create the DB engine
-db_path = '/mnt/mohamed/instance/sdn.db'
+db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'sdn.db')
 engine = create_engine(f'sqlite:///{db_path}')
 Base.metadata.create_all(engine)
 

@@ -80,8 +80,6 @@ def myNetwork():
     net.addLink(s3, smtp)
     net.addLink(s3, dns)
 
-    # Redundant link to create loop for testing STP
-    net.addLink(s1, s3)
 
     info('*** Build & start\n')
     net.build()
@@ -93,10 +91,12 @@ def myNetwork():
     s2.start([c0])
     s3.start([c0])
 
-    # Enable STP on all switches
-    s1.cmd('ovs-vsctl set Bridge s1 stp_enable=true')
-    s2.cmd('ovs-vsctl set Bridge s2 stp_enable=true')
-    s3.cmd('ovs-vsctl set Bridge s3 stp_enable=true')
+    # static routes to ensure inter-subnet connectivity goes through the switches (no default gateway in SDN)
+    info('*** Configuring static routes\n')
+    for host in [h1, h2, h3, ftp, smtp, dns]:
+        host.cmd('ip route add 192.168.10.0/24 dev {}-eth0'.format(host.name))
+
+    http.cmd('ip route add 192.168.20.0/24 dev http-eth0')
 
     info('*** Ready\n')
     CLI(net)

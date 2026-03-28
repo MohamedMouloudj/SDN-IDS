@@ -18,6 +18,9 @@ Usage
     ryu-manager switch.py
 """
 
+import os
+import sys
+
 from ryu.base import app_manager
 from ryu.controller import ofp_event
 from ryu.controller.handler import CONFIG_DISPATCHER, MAIN_DISPATCHER
@@ -28,6 +31,7 @@ from ryu.ofproto import ofproto_v1_3
 from ryu.lib.packet import packet, ethernet, ether_types
 from ryu.lib.packet import in_proto, ipv4, icmp, tcp, udp, arp
 
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from models import Session, History, Packets_dropped
 
 # ---------------------------------------------------------------------------
@@ -155,7 +159,63 @@ class SimpleSwitch13(app_manager.RyuApp):
         actions = [parser.OFPActionOutput(ofproto.OFPP_CONTROLLER,
                                           ofproto.OFPCML_NO_BUFFER)]
         self._add_flow(datapath, priority=0, match=match, actions=actions)
+
+        # DMZ policy only on s2
+        if datapath.id == 2:
+            self._install_core_routing(datapath)
+
         self.logger.info('Switch %016x connected - table-miss rule installed.', datapath.id)
+
+    def _install_core_routing(self, datapath):
+        """Install DMZ policy rules on the core switch (s2).
+
+        Policy:
+        - LAN -> DMZ: only port 80 (HTTP) is allowed
+        - DMZ -> LAN: blocked entirely (DMZ cannot initiate connections to LAN)
+        - LAN -> DMZ non-80: dropped
+        """
+        parser  = datapath.ofproto_parser
+
+        # ALLOW: LAN -> DMZ on port 80 only (out via port 1 toward s1)
+        match = parser.OFPMatch(
+            eth_type=ether_types.ETH_TYPE_IP,
+            ipv4_src=('192.168.20.0', '255.255.255.0'),
+            ipv4_dst=('192.168.10.0', '255.255.255.0'),
+            ip_proto=in_proto.IPPROTO_TCP,
+            tcp_dst=80,
+        )
+        self._add_flow(datapath, priority=20, match=match,
+                    actions=[parser.OFPActionOutput(1)])
+
+        # DROP: LAN -> DMZ on any other port
+        match = parser.OFPMatch(
+            eth_type=ether_types.ETH_TYPE_IP,
+            ipv4_src=('192.168.20.0', '255.255.255.0'),
+            ipv4_dst=('192.168.10.0', '255.255.255.0'),
+        )
+        self._add_flow(datapath, priority=10, match=match, actions=[])
+
+        # DROP: DMZ -> LAN (DMZ never initiates)
+        match = parser.OFPMatch(
+            eth_type=ether_types.ETH_TYPE_IP,
+            ipv4_src=('192.168.10.0', '255.255.255.0'),
+            ipv4_dst=('192.168.20.0', '255.255.255.0'),
+        )
+        self._add_flow(datapath, priority=10, match=match, actions=[])
+
+        # ALLOW: LAN -> DMZ HTTP reply (DMZ responding back to LAN)
+        match = parser.OFPMatch(
+            eth_type=ether_types.ETH_TYPE_IP,
+            ipv4_src=('192.168.10.0', '255.255.255.0'),
+            ipv4_dst=('192.168.20.0', '255.255.255.0'),
+            ip_proto=in_proto.IPPROTO_TCP,
+            tcp_src=80,
+        )
+        self._add_flow(datapath, priority=20, match=match,
+                    actions=[parser.OFPActionOutput(2)])
+
+        self.logger.info('DMZ policy rules installed on s2.')
+
 
     # ------------------------------------------------------------------
     # OpenFlow event: packet-in (core learning + policy logic)
@@ -310,7 +370,7 @@ class SimpleSwitch13(app_manager.RyuApp):
         return actions
 
     # ------------------------------------------------------------------
-    # Database query helpers (each opens and closes its own session)
+    # Database query helpers
     # ------------------------------------------------------------------
 
     def _get_attackers(self):

@@ -36,11 +36,12 @@ Usage
 
 import switch
 
-import csv
 import os
+import sys
+
 from datetime import datetime
 from collections import defaultdict
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 from ryu.controller import ofp_event
 from ryu.controller.handler import MAIN_DISPATCHER, DEAD_DISPATCHER
@@ -49,17 +50,20 @@ from ryu.lib import hub
 from ryu.lib.packet import ether_types
 
 
+import csv
 import pandas as pd
 
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from models import Session, History
-from pipeline import (
-    extract_flow_features,
-    AUTOENCODER_FEATURES,
-    RF_FEATURES,
-    ATTACK_LABELS,
-    identify_attacker,
-    identify_victim,
-)
+# from pipeline import (
+#     extract_flow_features,
+#     AUTOENCODER_FEATURES,
+#     RF_FEATURES,
+#     ATTACK_LABELS,
+#     identify_attacker,
+#     identify_victim,
+# )
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -212,6 +216,8 @@ class MonitorApp(switch.SimpleSwitch13):
         body      = ev.msg.body
         dpid      = ev.msg.datapath.id
 
+        self.logger.info('Stats reply from %016x: %d total flows', dpid, len(body)) #temp logs
+
         # Only look at priority-1 IPv4 flow entries (skip table-miss at p=0)
         ip_flows = [
             flow for flow in body
@@ -224,7 +230,8 @@ class MonitorApp(switch.SimpleSwitch13):
         )
 
         for stat in ip_flows:
-            features = extract_flow_features(stat)
+            # features = extract_flow_features(stat)  # TODO
+            features = None # placeholder until feature extraction is implemented
             if features is None:
                 # Protocol not ICMP/TCP/UDP -> skip
                 continue
@@ -293,8 +300,10 @@ class MonitorApp(switch.SimpleSwitch13):
             # -----------------------------------------------------------
             df          = pd.DataFrame(records)
             attack_type = self._classify_attack(records, proto)
-            attacker    = identify_attacker(df)
-            victim      = identify_victim(df)
+            # attacker    = identify_attacker(df)   # TODO: implement this function in pipeline.py
+            attacker    = 'Unknown'  # placeholder until classification is implemented
+            # victim      = identify_victim(df)
+            victim      = df['Ip_dst'].mode()[0]  # most common destination IP in the window
             port        = 0 if proto == 'icmp' else df['Port_dst'].mode()[0]
 
             self.logger.warning(
@@ -312,7 +321,7 @@ class MonitorApp(switch.SimpleSwitch13):
 
     def _detect_anomaly(
         self, records: List[dict], proto: str
-    ) -> tuple[bool, float]:
+    ) -> Tuple[bool, float]:
         """[STUB] Run autoencoder inference and compare RMSE to threshold.
 
         Replace this body with:
@@ -417,7 +426,7 @@ class MonitorApp(switch.SimpleSwitch13):
         ----------
         proto       : str - 'icmp' | 'tcp' | 'udp'
         attack_type : str - human-readable attack label
-        attacker    : str - IP address or 'random'
+        attacker    : str - IP address or 'random' for multi-source attacks
         victim      : str - most common destination IP
         port        : int - destination port (0 for ICMP)
         """
