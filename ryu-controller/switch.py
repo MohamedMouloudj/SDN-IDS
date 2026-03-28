@@ -1,4 +1,4 @@
-"""switch2.py - OpenFlow 1.3 learning switch with DB-driven mitigation policy.
+"""switch.py - OpenFlow 1.3 learning switch with DB-driven mitigation policy.
 
 Responsibilities
 ----------------
@@ -15,7 +15,7 @@ Run directly only for testing basic switching (no AI models needed).
 
 Usage
 -----
-    ryu-manager switch2.py
+    ryu-manager switch.py
 """
 
 from ryu.base import app_manager
