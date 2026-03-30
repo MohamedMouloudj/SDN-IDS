@@ -83,6 +83,8 @@ THRESHOLDS: Dict[str, float] = {
     'udp':  THRESHOLD_UDP,
 }
 
+SVM_THRESHOLD = 0.5  # Placeholder until SVM model is trained
+
 # ---------------------------------------------------------------------------
 # Monitor app
 # ---------------------------------------------------------------------------

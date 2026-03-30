@@ -77,6 +77,18 @@ RF_MINMAX_COLS: List[str] = ['Pkt_per_sec', 'Flow_dur_nsec', 'Port_dst']
 # Columns scaled with StandardScaler before RF inference.
 RF_STANDARD_COLS: List[str] = ['Flow_duration', 'Packet_count']
 
+# Feature columns expected by the SVM classifier.
+# SVM uses the same feature set as RF but requires denser scaling,
+# so preprocessing is handled separately in preprocess_for_svm().
+SVM_FEATURES: List[str] = RF_FEATURES
+
+# SVM requires all features on the same scale, so every numeric
+# column is standardized, unlike RF which uses mixed scaling.
+SVM_SCALE_COLS: List[str] = [
+    'Port_dst', 'Flow_duration', 'Flow_dur_nsec',
+    'Packet_count', 'Pkt_per_sec',
+]
+
 # Columns scaled with the fitted per-protocol StandardScaler for autoencoders.
 AUTOENCODER_SCALE_COLS: Dict[str, List[str]] = {
     'icmp': ['Flow_duration', 'Packet_count', 'Bytes', 'Icmp_type'],
@@ -341,7 +353,7 @@ def preprocess_for_autoencoder(
     return df.values.astype(np.float32)
 
 
-def preprocess_for_classifier(records: List[Dict]) -> pd.DataFrame:
+def preprocess_for_rf_classifier(records: List[Dict]) -> pd.DataFrame:
     """Prepare a window of flow records for Random Forest inference.
 
     Applies port filtering, MinMaxScaler on rate/port columns, and
@@ -373,6 +385,31 @@ def preprocess_for_classifier(records: List[Dict]) -> pd.DataFrame:
 
     return df
 
+def preprocess_for_svm_classifier(records: List[Dict]) -> np.ndarray:
+    """[STUB] Prepare a window of flow records for SVM inference.
+
+    SVM is sensitive to feature scale, so ALL columns are scaled with
+    StandardScaler (unlike RF which uses mixed MinMax + Standard scaling).
+    Returns a float32 NumPy array instead of a DataFrame because sklearn
+    SVM expects a dense array input.
+
+    Parameters
+    ----------
+    records : list of dict - raw feature dicts from extract_flow_features()
+
+    Returns
+    -------
+    np.ndarray - shape (len(records), n_features), dtype float32
+
+    Notes
+    -----
+    Replace this stub body with:
+        df = pd.DataFrame(records)[SVM_FEATURES].copy()
+        df['Port_dst'] = df['Port_dst'].apply(filter_port)
+        scaler = StandardScaler()
+        return scaler.fit_transform(df[SVM_SCALE_COLS]).astype(np.float32)
+    """
+    return np.zeros((len(records), len(SVM_FEATURES)), dtype=np.float32)
 
 # ---------------------------------------------------------------------------
 # Section 3 - Post-processing
