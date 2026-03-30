@@ -2,3 +2,5 @@
 __pycache__
 *.csv
 *.db
+mininet-topo/*.html*
+mininet-topo/*.pdf
