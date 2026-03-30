@@ -6,9 +6,9 @@ inputs, return outputs, no side effects.
 
 The module is organised in three sections:
 
-    1. Feature extraction  - raw OpenFlow stat → feature dictionary
-    2. Preprocessing       - feature dicts/DataFrames → model-ready arrays
-    3. Post-processing     - model outputs → human-readable results
+    1. Feature extraction  - raw OpenFlow stat -> feature dictionary
+    2. Preprocessing       - feature dicts/DataFrames -> model-ready arrays
+    3. Post-processing     - model outputs -> human-readable results
 
 monitor.py calls these functions and owns all state (buffers, sessions, …).
 The functions here can also be called offline from a training script to build
@@ -36,7 +36,7 @@ import pandas as pd
 
 # Ports that are kept as-is for the classifier's Port_dst feature.
 # All other ports are mapped to 0 (the "other" class).
-KNOWN_PORTS: frozenset[int] = frozenset({0, 21, 22, 53, 80, 443})
+KNOWN_PORTS: frozenset[int] = frozenset({0, 21, 20, 25, 53, 80})
 
 # Mapping from ip.proto integer to string label used in feature dicts.
 PROTO_MAP: Dict[int, str] = {1: 'icmp', 6: 'tcp', 17: 'udp'}
@@ -49,17 +49,17 @@ _TCP_FLAG_NAMES = ('NS', 'WCR', 'ECE', 'URG', 'ACK', 'PSH', 'RST', 'SYN', 'FIN')
 AUTOENCODER_FEATURES: Dict[str, List[str]] = {
     'icmp': [
         'Port_dst', 'Icmp', 'Icmp_type', 'Tcp', 'ACK', 'PSH', 'RST', 'SYN',
-        'FIN', 'Http', 'SSL', 'SSH', 'Ftp', 'Udp', 'Dns', 'Dhcp',
+        'FIN', 'Http', 'Smtp', 'Ftp', 'Udp', 'Dns',
         'Flow_duration', 'Packet_count', 'Same_ip', 'Bytes',
     ],
     'tcp': [
         'Port_dst', 'Icmp', 'Tcp', 'ACK', 'PSH', 'RST', 'SYN', 'FIN',
-        'Http', 'SSL', 'SSH', 'Ftp', 'Udp', 'Flow_duration', 'Packet_count',
+        'Http', 'Ftp', 'Smtp', 'Udp', 'Flow_duration', 'Packet_count',
         'Same_ip', 'Bytes',
     ],
     'udp': [
         'Port_dst', 'Icmp', 'Tcp', 'ACK', 'PSH', 'RST', 'SYN', 'FIN',
-        'Http', 'SSL', 'SSH', 'Ftp', 'Udp', 'Dns', 'Dhcp',
+        'Http', 'Ftp', 'Smtp', 'Udp', 'Dns',
         'Flow_duration', 'Packet_count', 'Same_ip', 'Bytes',
     ],
 }
@@ -67,7 +67,7 @@ AUTOENCODER_FEATURES: Dict[str, List[str]] = {
 # Feature columns expected by the Random Forest classifier.
 RF_FEATURES: List[str] = [
     'Port_dst', 'Icmp', 'Tcp', 'ACK', 'PSH', 'RST', 'SYN', 'FIN',
-    'Http', 'SSH', 'Ftp', 'Udp', 'Flow_duration', 'Flow_dur_nsec',
+    'Http', 'Ftp', 'Udp', 'Flow_duration', 'Flow_dur_nsec',
     'Packet_count', 'Pkt_per_sec', 'Same_ip',
 ]
 
@@ -120,7 +120,7 @@ def extract_flow_features(stat) -> Optional[Dict]:
     Notes
     -----
     The returned dict contains ALL columns used by every downstream consumer
-    (autoencoders, RF classifier, DB packet table). Callers select the subset
+    (autoencoders, classifiers). Callers select the subset
     they need via AUTOENCODER_FEATURES or RF_FEATURES.
     """
     ip_proto = stat.match.get('ip_proto')
@@ -138,7 +138,7 @@ def extract_flow_features(stat) -> Optional[Dict]:
         port_src, port_dst,
         icmp_flag, icmp_code, icmp_type,
         tcp_flag, udp_flag,
-        http, ssl, ftp, ssh, dns, dhcp,
+        http, ftp, smtp, dns,
         ack, psh, rst, syn, fin,
         proto_type_label,
     ) = _extract_proto_fields(stat, ip_proto)
@@ -168,8 +168,8 @@ def extract_flow_features(stat) -> Optional[Dict]:
         'ACK': ack, 'PSH': psh, 'RST': rst, 'SYN': syn, 'FIN': fin,
 
         # Application-layer flags
-        'Http': http, 'SSL': ssl, 'SSH': ssh, 'Ftp': ftp,
-        'Dns': dns, 'Dhcp': dhcp,
+        'Http': http, 'Ftp': ftp, 'Smtp': smtp,
+        'Dns': dns,
 
         # Flow counters
         'Flow_duration':  stat.duration_sec,
@@ -195,13 +195,13 @@ def _extract_proto_fields(stat, ip_proto: int) -> Tuple:
 
     Returns
     -------
-    Tuple with 20 values (see inline comments for names).
+    Tuple with 17 values (see inline comments for names).
     """
     # Defaults for all flags
     port_src = port_dst = 0
     icmp_code = icmp_type = -1
     icmp_flag = tcp_flag = udp_flag = 0
-    http = ssl = ftp = ssh = dns = dhcp = 0
+    http  = ftp = smtp = dns  = 0
     ack = psh = rst = syn = fin = 0
     proto_type_label = ''
 
@@ -217,9 +217,9 @@ def _extract_proto_fields(stat, ip_proto: int) -> Tuple:
         port_dst   = stat.match.get('tcp_dst', 0)
 
         # Application-layer detection by well-known port
-        proto_type_label, http, ssl, ftp, ssh = _classify_tcp_service(port_src, port_dst)
+        proto_type_label, http, ftp, smtp = _classify_tcp_service(port_src, port_dst)
 
-        # TCP flags bitmask → individual bits
+        # TCP flags bitmask -> individual bits
         raw_flags  = stat.match.get('tcp_flags', 0)
         flags_bin  = bin(raw_flags)[2:].zfill(len(_TCP_FLAG_NAMES))
         flag_dict  = dict(zip(_TCP_FLAG_NAMES, flags_bin))
@@ -233,13 +233,13 @@ def _extract_proto_fields(stat, ip_proto: int) -> Tuple:
         udp_flag   = 1
         port_src   = stat.match.get('udp_src', 0)
         port_dst   = stat.match.get('udp_dst', 0)
-        proto_type_label, dns, dhcp = _classify_udp_service(port_src, port_dst)
+        proto_type_label, dns = _classify_udp_service(port_src, port_dst)
 
     return (
         port_src, port_dst,
         icmp_flag, icmp_code, icmp_type,
         tcp_flag, udp_flag,
-        http, ssl, ftp, ssh, dns, dhcp,
+        http, ftp, smtp, dns,
         ack, psh, rst, syn, fin,
         proto_type_label,
     )
@@ -255,16 +255,15 @@ def _classify_tcp_service(src_port: int, dst_port: int) -> Tuple[str, int, int, 
 
     Returns
     -------
-    tuple (label, http, ssl, ftp, ssh)
+    tuple (label, http, ftp, smtp)
         label : human-readable service name or empty string
-        http, ssl, ftp, ssh : binary flags (only one is 1)
+        http, ftp, smtp : binary flags (only one is 1)
     """
     ports = {src_port, dst_port}
-    if   ports & {80}:          return 'Http', 1, 0, 0, 0
-    elif ports & {443}:         return 'SSL',  0, 1, 0, 0
-    elif ports & {20, 21}:      return 'Ftp',  0, 0, 1, 0
-    elif ports & {22}:          return 'SSH',  0, 0, 0, 1
-    return '', 0, 0, 0, 0
+    if   ports & {80}:          return 'Http', 1, 0, 0 
+    elif ports & {20, 21}:      return 'Ftp',  0, 1, 0
+    elif ports & {25}:          return 'Smtp', 0, 0, 1
+    return '', 0, 0, 0
 
 
 def _classify_udp_service(src_port: int, dst_port: int) -> Tuple[str, int, int]:
@@ -277,12 +276,11 @@ def _classify_udp_service(src_port: int, dst_port: int) -> Tuple[str, int, int]:
 
     Returns
     -------
-    tuple (label, dns, dhcp)
+    tuple (label, dns)
     """
     ports = {src_port, dst_port}
-    if   ports & {53}:       return 'DNS',  1, 0
-    elif ports & {67, 68}:   return 'Dhcp', 0, 1
-    return '', 0, 0
+    if   ports & {53}:       return 'DNS',  1
+    return '', 0
 
 
 def _safe_rate(count: int, sec: int, nsec: int) -> Tuple[float, float]:
@@ -448,7 +446,7 @@ def identify_victim(df: pd.DataFrame) -> str:
 def filter_port(port: int) -> int:
     """Map non-whitelisted destination ports to 0.
 
-    The autoencoder and RF models were trained on a dataset where rare ports
+    The autoencoder and classifier models were trained on a dataset where rare ports
     were replaced with 0 to reduce cardinality. This function replicates that
     transformation at inference time.
 
