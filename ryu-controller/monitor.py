@@ -287,13 +287,13 @@ class MonitorApp(switch.SimpleSwitch13):
         records : list of dict - BATCH_SIZE feature dicts
         """
         # -----------------------------------------------------------
-        # STUB: anomaly detection — replace when models are available
+        # STUB: anomaly detection - replace when models are available
         # -----------------------------------------------------------
         is_attack, rmse = self._detect_anomaly(records, proto)
 
         if is_attack:
             # -----------------------------------------------------------
-            # STUB: classification — replace when RF model is available
+            # STUB: classification - replace when RF model is available
             # -----------------------------------------------------------
             df          = pd.DataFrame(records)
             attack_type = self._classify_attack(records, proto)
