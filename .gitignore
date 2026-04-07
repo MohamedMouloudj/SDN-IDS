@@ -4,3 +4,6 @@ __pycache__
 *.db
 mininet-topo/*.html*
 mininet-topo/*.pdf
+notebooks/*.ipynb_checkpoints
+*.h5
+*.pkl

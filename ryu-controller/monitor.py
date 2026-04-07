@@ -34,6 +34,8 @@ Usage
 """
 
 
+from pyexpat import features
+
 import switch
 
 import os
@@ -72,10 +74,10 @@ from pipeline import (
 POLL_INTERVAL  = 10    # seconds between stat requests
 BATCH_SIZE     = 30    # number of flows per protocol window before processing
 
-# Autoencoder detection thresholds (RMSE). Placeholder until models are trained.
-THRESHOLD_ICMP = 0.279
-THRESHOLD_TCP  = 0.090
-THRESHOLD_UDP  = 0.100   # TODO: confirm once UDP model is trained
+# Autoencoder detection thresholds (RMSE)
+THRESHOLD_ICMP = 0.2777
+THRESHOLD_TCP  = 0.1470
+THRESHOLD_UDP  = 0.0447
 
 THRESHOLDS: Dict[str, float] = {
     'icmp': THRESHOLD_ICMP,
@@ -129,9 +131,16 @@ class MonitorApp(switch.SimpleSwitch13):
         file_exists = os.path.exists('traffic_log.csv')
         self._csv_file = open('traffic_log.csv', 'a', newline='')
         self._csv_writer = csv.DictWriter(self._csv_file, fieldnames=[
-            'Timestamp', 'Ip_src', 'Ip_dst', 'Port_src', 'Port_dst',
-            'Ip_protocole', 'Type_protocole', 'Icmp_type',
-            'Flow_duration', 'Packet_count', 'Byte_count',
+            'Timestamp', 'Ip_src', 'Ip_dst', 'Same_ip', 'Port_src', 'Port_dst',
+            'Ip_protocole', 'Type_protocole',
+            'Icmp', 'Icmp_code', 'Icmp_type',
+            'Tcp', 'Udp',
+            'ACK', 'PSH', 'RST', 'SYN', 'FIN',
+            'Http', 'Ftp', 'Smtp', 'Dns',
+            'Flow_duration', 'Flow_dur_nsec',
+            'Packet_count', 'Bytes',
+            'Pkt_per_sec', 'Pkt_per_nsec',
+            'Bytes_per_sec', 'Bytes_per_nsec',
             'Traffic', 'Attack_type',
         ])
         if not file_exists:
@@ -385,22 +394,9 @@ class MonitorApp(switch.SimpleSwitch13):
         attack_type : str  - attack label, or '' for normal traffic
         """
         try:
-            row = {
-                "Timestamp"      : features.get('Timestamp', datetime.now().timestamp()),
-                "Ip_src"         : features['Ip_src'],
-                "Ip_dst"         : features['Ip_dst'],
-                "Port_src"       : features['Port_src'],
-                "Port_dst"       : features['Port_dst'],
-                "Ip_protocole"   : features['Ip_protocole'],
-                "Type_protocole" : features['Type_protocole'],
-                "Icmp_type"      : features['Icmp_type'],
-                "Flow_duration"  : features['Flow_duration'],
-                "Packet_count"   : features['Packet_count'],
-                "Byte_count"     : features['Bytes'],
-                "Traffic"        : traffic,
-                "Attack_type"    : attack_type,
-            }
-            self._csv_writer.writerow(row)
+            features['Traffic'] = traffic
+            features['Attack_type'] = attack_type
+            self._csv_writer.writerow(features)
             self._csv_file.flush()
         except Exception as exc:
             self.logger.error('Failed to persist packet record: %s', exc)
