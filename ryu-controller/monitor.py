@@ -70,9 +70,9 @@ POLL_INTERVAL  = 10    # seconds between stat requests
 BATCH_SIZE     = 30    # number of flows per protocol window before processing
 
 # Autoencoder detection thresholds (RMSE)
-THRESHOLD_ICMP = 0.2777
-THRESHOLD_TCP  = 0.1470
-THRESHOLD_UDP  = 0.0447
+THRESHOLD_ICMP = 0.0498
+THRESHOLD_TCP  = 0.1125
+THRESHOLD_UDP  = 0.0127
 
 THRESHOLDS: Dict[str, float] = {
     'icmp': THRESHOLD_ICMP,
