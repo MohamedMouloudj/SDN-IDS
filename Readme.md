@@ -9,6 +9,7 @@ the `ryu-controller/` folder.
 ```bash
 cd ryu-controller
 source .ryu-env/bin/activate
+pip install eventlet=0.30.2
 ```
 
 **Verify the correct ryu-manager is used:**
