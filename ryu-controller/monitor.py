@@ -247,7 +247,7 @@ class MonitorApp(switch.SimpleSwitch13):
         for stat in ip_flows:
             features = extract_flow_features(stat)
             if features is None:
-                # Protocol not ICMP/TCP/UDP -> skip
+                # Skip protocol if it is not ICMP/TCP/UDP
                 continue
 
             proto = features['Ip_protocole']  # 'icmp' | 'tcp' | 'udp'
@@ -322,6 +322,14 @@ class MonitorApp(switch.SimpleSwitch13):
         else:
             self.logger.info('Window verdict: Normal  proto=%s  rmse=%.4f', proto, rmse)
 
+        
+        for record in records:
+            self._persist_packet(
+                record,
+                traffic='Attack' if is_attack else 'Normal',
+                attack_type=attack_type if is_attack else '',
+            )
+
 
     def _detect_anomaly(
         self, records: List[dict], proto: str
@@ -392,6 +400,7 @@ class MonitorApp(switch.SimpleSwitch13):
         attack_type : str  - attack label, or '' for normal traffic
         """
         try:
+            features['Timestamp'] = datetime.now().timestamp()
             features['Traffic'] = traffic
             features['Attack_type'] = attack_type
             self._csv_writer.writerow(features)
@@ -405,7 +414,7 @@ class MonitorApp(switch.SimpleSwitch13):
         attack_type: str,
         attacker: str,
         victim: str,
-        port,
+        port: int,
     ):
         """Write one detected attack event to the History table.
 
@@ -423,13 +432,20 @@ class MonitorApp(switch.SimpleSwitch13):
         """
         session = Session()
         try:
+            if attacker == 'random' and proto == 'icmp':
+                action = 'protocol_banned'
+            elif attacker == 'random':
+                action = 'port_blocked'
+            else:
+                action = 'ip_banned'
+            
             row = History(
                 Timestamp   = datetime.now().timestamp(),
                 Attack_type = attack_type,
                 Attacker    = attacker,
                 Victim      = victim,
                 Port        = str(port),
-                Action      = '',           # filled by switch after mitigation
+                Action      = action,   # still concerned about this 
                 Protocole   = proto,
             )
             session.add(row)
