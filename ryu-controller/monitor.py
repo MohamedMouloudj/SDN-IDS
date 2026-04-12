@@ -33,7 +33,8 @@ import switch
 
 import os
 import sys
-import pickle
+import json
+
 
 from datetime import datetime
 from collections import defaultdict
@@ -48,6 +49,8 @@ from ryu.lib.packet import ether_types
 
 import csv
 import pandas as pd
+from sklearn.preprocessing import StandardScaler
+import numpy as np
 
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -120,17 +123,28 @@ class MonitorApp(switch.SimpleSwitch13):
         # Background polling thread
         self._poll_thread = hub.spawn(self._poll_loop)
 
-        # # Load autoencoders
-        # self._autoencoders = {
-        #     proto: rt.InferenceSession(f'{proto}.onnx')
-        #     for proto in ('icmp', 'tcp', 'udp')
-        # }
+        # Load autoencoders
+        self._autoencoders = {
+            proto: rt.InferenceSession(f'{proto}.onnx')
+            for proto in ('icmp', 'tcp', 'udp')
+        }
 
         # # Load fitted scalers
+        # ! h5 files will cause an issue with python 3.8, so I converted them to json and will load them manually here. (see train_autoencoders.ipynb for the conversion process)
         # self._scalers = {}
         # for proto in ('icmp', 'tcp', 'udp'):
         #     with open(f'std_{proto}.pkl', 'rb') as f:
         #         self._scalers[proto] = pickle.load(f)
+        self._scalers = {}
+        for proto in ('icmp', 'tcp', 'udp'):
+            with open(f'std_{proto}.json', 'r') as f:
+                data = json.load(f)
+            scaler = StandardScaler()
+            scaler.mean_            = np.array(data['mean'])
+            scaler.scale_           = np.array(data['scale'])
+            scaler.var_             = np.array(data['var'])
+            scaler.n_samples_seen_  = data['n_samples_seen']
+            self._scalers[proto]    = scaler
 
         # CSV logging setup, for training data collection
         file_exists = os.path.exists('traffic_log.csv')
@@ -344,15 +358,14 @@ class MonitorApp(switch.SimpleSwitch13):
         -------
         tuple (is_attack: bool, rmse: float)
         """
-        # X = preprocess_for_autoencoder(records, proto, self._scalers[proto])
-        # session = self._autoencoders[proto]
-        # input_name  = session.get_inputs()[0].name
-        # X_reconstructed = session.run(None, {input_name: X})[0]
-        # mse  = np.mean(np.power(X - X_reconstructed, 2))
-        # rmse = float(np.sqrt(mse))
-        # self.logger.info('RMSE %s: %.4f (threshold: %.4f)', proto.upper(), rmse, THRESHOLDS[proto])
-        # return rmse > THRESHOLDS[proto], rmse
-        return False, 0.0
+        X = preprocess_for_autoencoder(records, proto, self._scalers[proto])
+        session = self._autoencoders[proto]
+        input_name  = session.get_inputs()[0].name
+        X_reconstructed = session.run(None, {input_name: X})[0]
+        mse  = np.mean(np.power(X - X_reconstructed, 2))
+        rmse = float(np.sqrt(mse))
+        self.logger.info('RMSE %s: %.4f (threshold: %.4f)', proto.upper(), rmse, THRESHOLDS[proto])
+        return rmse > THRESHOLDS[proto], rmse
 
     # ------------------------------------------------------------------
     # AI stub (replace bodies when models are integrated)
