@@ -1,4 +1,4 @@
-"""monitor.py - RYU monitoring app (no AI models yet).
+"""monitor.py - RYU monitoring app with autoencoder anomaly detection.
 
 Architecture
 ------------
@@ -10,22 +10,16 @@ on top:
     2. Periodic stat polling - every POLL_INTERVAL seconds, ask every known
        switch for its full flow table statistics.
     3. Feature extraction - convert raw OpenFlow stats into feature dicts
-       using pipeline.extract_flow_features() (the pipeline module is the
-       single source of truth for feature engineering).
+       using pipeline.extract_flow_features().
     4. Protocol buffering - accumulate ICMP / TCP / UDP records separately
        in fixed-size windows of BATCH_SIZE flows.
-    5. traffic persistence - write every processed flow record to the CSV file.
+    5. Anomaly detection  - autoencoder RMSE vs threshold per protocol.
+    6. Traffic persistence - write every flow record to CSV with label.
 
-AI integration (COMING LATER)
-------------------------------
-When the models are trained, steps 6-9 will be added inside _process_window():
-    6. Preprocessing via pipeline.preprocess_for_autoencoder()
-    7. Anomaly detection with the autoencoder (RMSE vs threshold)
-    8. Attack classification via pipeline.preprocess_for_classifier() + RF
-    9. Write attack events to the History table + let switch mitigate
-
-The stubs _detect_anomaly() and _classify_attack() already exist in this file
-so the insertion points are clear. They currently return no-op values.
+Classifier integration (COMING LATER)
+--------------------------------------
+    7. Attack classification via RF / SVM when anomaly is detected.
+    8. Write attack events to History table + let switch mitigate.
 
 Usage
 -----
@@ -34,12 +28,12 @@ Usage
 """
 
 
-from pyexpat import features
 
 import switch
 
 import os
 import sys
+import pickle
 
 from datetime import datetime
 from collections import defaultdict
@@ -58,10 +52,11 @@ import pandas as pd
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from models import Session, History
+from keras.models import load_model
 from pipeline import (
     extract_flow_features,
-    AUTOENCODER_FEATURES,
-    RF_FEATURES,
+    preprocess_for_autoencoder,
+    compute_rmse,
     ATTACK_LABELS,
     identify_attacker,
     identify_victim,
@@ -102,13 +97,11 @@ class MonitorApp(switch.SimpleSwitch13):
     * Handle EventOFPFlowStatsReply by extracting features from each flow,
       routing records into per-protocol buffers, and draining full windows.
 
-    AI hooks (stubs, not yet active)
-    --------------------------------
-    * _detect_anomaly()  - will call the autoencoder + pipeline preprocessing.
-    * _classify_attack() - will call the RF classifier + pipeline preprocessing.
-    * _record_attack()   - will write to the History table.
-    These are already wired into _process_window() but return no-ops until the
-    model files exist.
+    AI integration
+    --------------
+    * _detect_anomaly()  - runs autoencoder, compares RMSE to threshold.
+    * _classify_attack() - [stub] will run RF/SVM classifier.
+    * _record_attack()   - writes attack event to History table.
     """
 
     # ------------------------------------------------------------------
@@ -126,6 +119,19 @@ class MonitorApp(switch.SimpleSwitch13):
 
         # Background polling thread
         self._poll_thread = hub.spawn(self._poll_loop)
+
+        # Load autoencoders
+        self._autoencoders = {
+            'icmp': load_model('icmp.h5'),
+            'tcp':  load_model('tcp.h5'),
+            'udp':  load_model('udp.h5'),
+        }
+
+        # Load fitted scalers
+        self._scalers = {}
+        for proto in ('icmp', 'tcp', 'udp'):
+            with open(f'std_{proto}.pkl', 'rb') as f:
+                self._scalers[proto] = pickle.load(f)
 
         # CSV logging setup, for training data collection
         file_exists = os.path.exists('traffic_log.csv')
@@ -281,25 +287,20 @@ class MonitorApp(switch.SimpleSwitch13):
         self._process_window(proto, window)
 
     def _process_window(self, proto: str, records: List[dict]):
-        """Run the full detection pipeline on one completed window.
+        """Run the anomaly detection pipeline on one completed window.
 
-        Current state (no models): logs 'Normal' for every window.
-        Future state (with models):
-            1. preprocess_for_autoencoder() → X_array
-            2. _detect_anomaly(X_array, proto) → is_attack, rmse
-            3. If attack:
-                a. preprocess_for_classifier(records) → X_rf
-                b. _classify_attack(X_rf) → attack_type
-                c. _record_attack(records, proto, attack_type)
+        Steps
+        -----
+        1. preprocess_for_autoencoder() -> X_array
+        2. _detect_anomaly(X_array, proto) -> is_attack, rmse
+        3. If attack: _classify_attack() [stub] -> attack_type
+        4. _record_attack() -> History table
 
         Parameters
         ----------
         proto   : str - 'icmp' | 'tcp' | 'udp'
         records : list of dict - BATCH_SIZE feature dicts
         """
-        # -----------------------------------------------------------
-        # STUB: anomaly detection - replace when models are available
-        # -----------------------------------------------------------
         is_attack, rmse = self._detect_anomaly(records, proto)
 
         if is_attack:
@@ -321,21 +322,11 @@ class MonitorApp(switch.SimpleSwitch13):
         else:
             self.logger.info('Window verdict: Normal  proto=%s  rmse=%.4f', proto, rmse)
 
-    # ------------------------------------------------------------------
-    # AI stubs (replace bodies when models are integrated)
-    # ------------------------------------------------------------------
 
     def _detect_anomaly(
         self, records: List[dict], proto: str
     ) -> Tuple[bool, float]:
-        """[STUB] Run autoencoder inference and compare RMSE to threshold.
-
-        Replace this body with:
-            from pipeline import preprocess_for_autoencoder, compute_rmse
-            X = preprocess_for_autoencoder(records, proto, self._scalers[proto])
-            loss, _ = self._autoencoders[proto].evaluate(X, X, verbose=0)
-            rmse = compute_rmse(loss)
-            return rmse > THRESHOLDS[proto], rmse
+        """Run autoencoder inference and compare RMSE to threshold.
 
         Parameters
         ----------
@@ -346,8 +337,15 @@ class MonitorApp(switch.SimpleSwitch13):
         -------
         tuple (is_attack: bool, rmse: float)
         """
-        # Always return normal until models are loaded
-        return False, 0.0
+        X    = preprocess_for_autoencoder(records, proto, self._scalers[proto])
+        loss = self._autoencoders[proto].evaluate(X, X, verbose=0) # (X, X) since it s an autoencoder
+        rmse = compute_rmse(loss)
+        self.logger.info('RMSE %s: %.4f (threshold: %.4f)', proto.upper(), rmse, THRESHOLDS[proto])
+        return rmse > THRESHOLDS[proto], rmse
+
+    # ------------------------------------------------------------------
+    # AI stub (replace bodies when models are integrated)
+    # ------------------------------------------------------------------
 
     def _classify_attack(
         self, records: List[dict], proto: str

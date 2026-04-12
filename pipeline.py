@@ -343,11 +343,9 @@ def preprocess_for_autoencoder(
 
     df = pd.DataFrame(records)[feature_cols].copy()
 
-    # Port filtering: replace non-whitelisted ports with 0
     if 'Port_dst' in df.columns:
         df['Port_dst'] = df['Port_dst'].apply(filter_port)
 
-    # Apply the pre-fitted scaler only to the designated columns
     df[scale_cols] = scaler.transform(df[scale_cols])
 
     return df.values.astype(np.float32)
@@ -400,16 +398,14 @@ def preprocess_for_svm_classifier(records: List[Dict]) -> np.ndarray:
     Returns
     -------
     np.ndarray - shape (len(records), n_features), dtype float32
-
-    Notes
-    -----
-    Replace this stub body with:
-        df = pd.DataFrame(records)[SVM_FEATURES].copy()
-        df['Port_dst'] = df['Port_dst'].apply(filter_port)
-        scaler = StandardScaler()
-        return scaler.fit_transform(df[SVM_SCALE_COLS]).astype(np.float32)
     """
-    return np.zeros((len(records), len(SVM_FEATURES)), dtype=np.float32)
+    from sklearn.preprocessing import StandardScaler
+
+    df = pd.DataFrame(records)[SVM_FEATURES].copy()
+    df['Port_dst'] = df['Port_dst'].apply(filter_port)
+
+    scaler = StandardScaler()
+    return scaler.fit_transform(df[SVM_SCALE_COLS]).astype(np.float32)
 
 # ---------------------------------------------------------------------------
 # Section 3 - Post-processing
