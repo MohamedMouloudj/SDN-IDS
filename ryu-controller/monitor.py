@@ -52,7 +52,7 @@ import pandas as pd
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from models import Session, History
-from keras.models import load_model
+import onnxruntime as rt
 from pipeline import (
     extract_flow_features,
     preprocess_for_autoencoder,
@@ -120,18 +120,17 @@ class MonitorApp(switch.SimpleSwitch13):
         # Background polling thread
         self._poll_thread = hub.spawn(self._poll_loop)
 
-        # Load autoencoders
-        self._autoencoders = {
-            'icmp': load_model('icmp.h5'),
-            'tcp':  load_model('tcp.h5'),
-            'udp':  load_model('udp.h5'),
-        }
+        # # Load autoencoders
+        # self._autoencoders = {
+        #     proto: rt.InferenceSession(f'{proto}.onnx')
+        #     for proto in ('icmp', 'tcp', 'udp')
+        # }
 
-        # Load fitted scalers
-        self._scalers = {}
-        for proto in ('icmp', 'tcp', 'udp'):
-            with open(f'std_{proto}.pkl', 'rb') as f:
-                self._scalers[proto] = pickle.load(f)
+        # # Load fitted scalers
+        # self._scalers = {}
+        # for proto in ('icmp', 'tcp', 'udp'):
+        #     with open(f'std_{proto}.pkl', 'rb') as f:
+        #         self._scalers[proto] = pickle.load(f)
 
         # CSV logging setup, for training data collection
         file_exists = os.path.exists('traffic_log.csv')
@@ -345,11 +344,15 @@ class MonitorApp(switch.SimpleSwitch13):
         -------
         tuple (is_attack: bool, rmse: float)
         """
-        X    = preprocess_for_autoencoder(records, proto, self._scalers[proto])
-        loss = self._autoencoders[proto].evaluate(X, X, verbose=0) # (X, X) since it s an autoencoder
-        rmse = compute_rmse(loss)
-        self.logger.info('RMSE %s: %.4f (threshold: %.4f)', proto.upper(), rmse, THRESHOLDS[proto])
-        return rmse > THRESHOLDS[proto], rmse
+        # X = preprocess_for_autoencoder(records, proto, self._scalers[proto])
+        # session = self._autoencoders[proto]
+        # input_name  = session.get_inputs()[0].name
+        # X_reconstructed = session.run(None, {input_name: X})[0]
+        # mse  = np.mean(np.power(X - X_reconstructed, 2))
+        # rmse = float(np.sqrt(mse))
+        # self.logger.info('RMSE %s: %.4f (threshold: %.4f)', proto.upper(), rmse, THRESHOLDS[proto])
+        # return rmse > THRESHOLDS[proto], rmse
+        return False, 0.0
 
     # ------------------------------------------------------------------
     # AI stub (replace bodies when models are integrated)
