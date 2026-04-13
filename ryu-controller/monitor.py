@@ -268,9 +268,6 @@ class MonitorApp(switch.SimpleSwitch13):
             # Buffer the record
             self._buffers[proto].append(features)
 
-            # Persist raw flow record to CSV file immediately (before windowing)
-            self._persist_packet(features, traffic='Normal', attack_type='')
-
             # Check if we have a full window
             if len(self._buffers[proto]) >= BATCH_SIZE:
                 self._drain_buffer(proto)
