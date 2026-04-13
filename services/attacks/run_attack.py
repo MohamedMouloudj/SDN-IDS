@@ -6,7 +6,7 @@ Usage
 
 Run from Mininet CLI after starting services.
 Generates each attack type for ATTACK_DURATION seconds with a pause between.
-Writes attack_log.json with exact unix timestamps for automatic labeling.
+Writes run_attack_log.json with exact unix timestamps for automatic labeling.
 """
 
 import subprocess
@@ -14,9 +14,9 @@ import time
 import json
 from datetime import datetime
 
-ATTACK_DURATION = 120  # seconds per attack
-PAUSE           = 30   # seconds between attacks
-LOG_PATH        = '../ryu-controller/attack_log.json'
+ATTACK_DURATION = 200  # seconds per attack
+PAUSE           = 50   # seconds between attacks
+LOG_PATH = '../ryu-controller/run_attack_log.json'
 
 ATTACKS = [
     {

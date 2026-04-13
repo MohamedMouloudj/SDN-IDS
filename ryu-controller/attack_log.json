@@ -1,0 +1,32 @@
+[
+  {
+    "attack_type": "ICMP_flood",
+    "start": 1776067420.8144014,
+    "end": 1776067540.9172924
+  },
+  {
+    "attack_type": "SYN_flood",
+    "start": 1776067570.948224,
+    "end": 1776067691.0456438
+  },
+  {
+    "attack_type": "UDP_flood",
+    "start": 1776067721.0508115,
+    "end": 1776067841.1495702
+  },
+  {
+    "attack_type": "HTTP_flood",
+    "start": 1776067871.1651406,
+    "end": 1776067991.2661989
+  },
+  {
+    "attack_type": "LAND_attack",
+    "start": 1776068021.286669,
+    "end": 1776068141.3143504
+  },
+  {
+    "attack_type": "SLOWLORIS",
+    "start": 1776068171.3255193,
+    "end": 1776068291.3428433
+  }
+]

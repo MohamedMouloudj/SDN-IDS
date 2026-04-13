@@ -69,6 +69,11 @@ from pipeline import (
 # Configuration
 # ---------------------------------------------------------------------------
 
+# Set to True only during attack traffic collection
+# Each detected attack window writes its timestamp to attack_log.json
+COLLECTION_MODE = True
+ATTACK_LOG_PATH = 'attack_log.json'
+
 POLL_INTERVAL  = 10    # seconds between stat requests
 BATCH_SIZE     = 30    # number of flows per protocol window before processing
 
@@ -314,25 +319,26 @@ class MonitorApp(switch.SimpleSwitch13):
         is_attack, rmse = self._detect_anomaly(records, proto)
 
         if is_attack:
-            # -----------------------------------------------------------
-            # STUB: classification - replace when RF model is available
-            # -----------------------------------------------------------
             df          = pd.DataFrame(records)
             attack_type = self._classify_attack(records, proto)
             attacker    = identify_attacker(df)
             victim      = identify_victim(df)
             port        = 0 if proto == 'icmp' else df['Port_dst'].mode()[0]
 
+            # log window timestamps for dataset labeling
+            start = records[0].get('Timestamp', datetime.now().timestamp())
+            end   = records[-1].get('Timestamp', datetime.now().timestamp())
+            self._log_attack_window(proto, start, end)
+
             self.logger.warning(
                 'ATTACK DETECTED  proto=%s  type=%s  attacker=%s  victim=%s  port=%s  rmse=%.4f',
                 proto, attack_type, attacker, victim, port, rmse,
             )
-
             self._record_attack(proto, attack_type, attacker, victim, port)
+
         else:
             self.logger.info('Window verdict: Normal  proto=%s  rmse=%.4f', proto, rmse)
 
-        
         for record in records:
             self._persist_packet(
                 record,
@@ -420,6 +426,41 @@ class MonitorApp(switch.SimpleSwitch13):
             self._csv_file.flush()
         except Exception as exc:
             self.logger.error('Failed to persist packet record: %s', exc)
+
+
+    def _log_attack_window(self, proto: str, start: float, end: float):
+        """Append a detected attack window timestamp to attack_log.json.
+
+        Only active when COLLECTION_MODE is True. Used during dataset
+        collection to map CSV timestamps to attack types automatically.
+
+        Parameters
+        ----------
+        proto : str - protocol of detected attack window
+        start : float - unix timestamp of first record in window
+        end   : float - unix timestamp of last record in window
+        """
+        if not COLLECTION_MODE:
+            return
+
+        entry = {
+            'proto': proto,
+            'start': start,
+            'end':   end,
+        }
+
+        # load existing log or start fresh
+        if os.path.exists(ATTACK_LOG_PATH):
+            with open(ATTACK_LOG_PATH, 'r') as f:
+                log = json.load(f)
+        else:
+            log = []
+
+        log.append(entry)
+
+        with open(ATTACK_LOG_PATH, 'w') as f:
+            json.dump(log, f, indent=2)
+
 
     def _record_attack(
         self,
