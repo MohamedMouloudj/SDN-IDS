@@ -8,4 +8,4 @@ notebooks/*.ipynb_checkpoints
 *.h5
 *.pkl
 *.onnx
-ryu-controller/std_*.json
+ryu-controller/*.json
