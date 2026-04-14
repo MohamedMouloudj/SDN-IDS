@@ -40,9 +40,9 @@ ATTACKS = [
         'cmd':     'hping3 -S -p 80 --spoof 192.168.10.10 192.168.10.10',
     },
     {
-    'name': 'SLOWLORIS',
-    'cmd':  'python3 ../services/attacks/slowloris.py',
-}   ,
+        'name': 'SLOWLORIS',
+        'cmd':  'python3 ../services/attacks/slowloris.py',
+    },
 ]
 
 log = []

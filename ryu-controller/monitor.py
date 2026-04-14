@@ -457,6 +457,9 @@ class MonitorApp(switch.SimpleSwitch13):
             log = []
 
         log.append(entry)
+        print(
+            f'[+] Attack window logged: proto={proto} start={start:.2f} end={end:.2f}'
+        )
 
         with open(ATTACK_LOG_PATH, 'w') as f:
             json.dump(log, f, indent=2)
