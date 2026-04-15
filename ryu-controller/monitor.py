@@ -317,6 +317,7 @@ class MonitorApp(switch.SimpleSwitch13):
         records : list of dict - BATCH_SIZE feature dicts
         """
         is_attack, rmse = self._detect_anomaly(records, proto)
+        attack_type = ''
 
         if is_attack:
             df          = pd.DataFrame(records)
@@ -450,11 +451,15 @@ class MonitorApp(switch.SimpleSwitch13):
         }
 
         # load existing log or start fresh
+        log = []
         if os.path.exists(ATTACK_LOG_PATH):
-            with open(ATTACK_LOG_PATH, 'r') as f:
-                log = json.load(f)
-        else:
-            log = []
+            try:
+                with open(ATTACK_LOG_PATH, 'r') as f:
+                    content = f.read().strip()
+                    if content:
+                        log = json.loads(content)
+            except (json.JSONDecodeError, ValueError):
+                log = []
 
         log.append(entry)
         print(
