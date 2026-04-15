@@ -29,11 +29,11 @@ Traffic Components & Frequency
 --------------------------------------------------------
 
 1. HTTP Traffic (TCP/80 to DMZ)
-   - Frequency: high (0.5 - 2 sec intervals)
+   - Frequency: high (1.5 - 4 sec intervals)
    - Purpose: main service load toward DMZ web server
 
 2. DNS Traffic (UDP/53 to DNS server)
-   - Frequency: medium-high (0.5 - 2 sec intervals)
+   - Frequency: medium-high (0.2 - 1 sec intervals)
    - Purpose: name resolution queries for internal services
 
 3. FTP Traffic (TCP/21)
@@ -41,11 +41,11 @@ Traffic Components & Frequency
    - Purpose: file transfer simulation
 
 4. SMTP Traffic (TCP/25)
-   - Frequency: low (3 - 8 sec intervals)
+   - Frequency: low (3 - 7 sec intervals)
    - Purpose: email service simulation
 
 5. ICMP Traffic (ping between hosts only)
-   - Frequency: continuous (1 - 3 sec intervals)
+   - Frequency: continuous (0.5 - 0.8 sec intervals)
    - Rule: NEVER ping self
    - Purpose: host reachability and baseline network chatter
 
@@ -82,7 +82,7 @@ def http_traffic():
     
     while True:
         subprocess.run(cmd, shell=True)
-        time.sleep(random.uniform(1, 3))
+        time.sleep(random.uniform(1.5, 4))
 
 
 def ftp_traffic():
@@ -147,7 +147,7 @@ def icmp_traffic():
     while True:
         dst = random.choice(targets)
         subprocess.run(f"ping -c 5 {dst}", shell=True)
-        time.sleep(random.uniform(0.5, 1.5))
+        time.sleep(random.uniform(0.5, 0.8))
 
 
 # ----------- MAIN -----------
