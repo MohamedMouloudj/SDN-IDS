@@ -33,7 +33,13 @@ ryu-manager monitor.py
 
 ### Prerequisites
 
-#### 1. Comment out model loading in `monitor.py`
+#### 1. Ensure RYU monitor and switch are in collection mode
+
+```python
+COLLECTION_MODE = True
+```
+
+#### 2. Comment out model loading in `monitor.py`
 
 Before running the monitor for data collection, the autoencoder models are not yet
 trained. Comment out the following blocks in `monitor.py`:
@@ -64,13 +70,13 @@ In `_detect_anomaly`:
 return False, 0.0
 ```
 
-#### 2. Delete old CSV if it exists
+#### 3. Delete old CSV if it exists
 
 ```bash
 rm ryu-controller/traffic_log.csv
 ```
 
-#### 3. Start RYU
+#### 4. Start RYU
 
 ```bash
 cd ryu-controller
