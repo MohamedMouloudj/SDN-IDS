@@ -109,9 +109,6 @@ dns python3 ../services/dns_server.py &
 h1 python3 ../services/traffic_normal.py &
 h2 python3 ../services/traffic_normal.py &
 h3 python3 ../services/traffic_normal.py &
-h1 ping -c 999 h2 &
-h2 ping -c 999 h3 &
-h1 ping -c 999 192.168.10.10 &
 ```
 
 ### 4. Wait
@@ -130,8 +127,6 @@ Aim for at least 500 rows per protocol before stopping.
 h1 pkill -f traffic_normal.py
 h2 pkill -f traffic_normal.py
 h3 pkill -f traffic_normal.py
-h1 pkill ping
-h2 pkill ping
 http pkill python3
 ftp pkill python3
 smtp pkill python3
