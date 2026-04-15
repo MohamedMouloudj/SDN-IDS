@@ -35,6 +35,13 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 from models import Session, History, Packets_dropped
 
 # ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+
+# Set to true fro attack data collection, it disables mitigation.
+COLLECTION_MODE = True
+
+# ---------------------------------------------------------------------------
 # Module-level constants
 # ---------------------------------------------------------------------------
 
@@ -351,6 +358,9 @@ class SimpleSwitch13(app_manager.RyuApp):
         -------
         list - original actions (forward) or [] (drop)
         """
+        if COLLECTION_MODE:
+            return actions
+        
         attackers         = self._get_attackers()
         attacked_ports    = self._get_attacked_ports()
         banned_protocols  = self._get_banned_protocols()
