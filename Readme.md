@@ -54,19 +54,27 @@ In `__init__`:
 
 # self._scalers = {}
 # for proto in ('icmp', 'tcp', 'udp'):
-#     with open(f'std_{proto}.pkl', 'rb') as f:
-#         self._scalers[proto] = pickle.load(f)
+#     with open(f'std_{proto}.json', 'r') as f:
+#         data = json.load(f)
+#     scaler = StandardScaler()
+#     scaler.mean_            = np.array(data['mean'])
+#     scaler.scale_           = np.array(data['scale'])
+#     scaler.var_             = np.array(data['var'])
+#     scaler.n_samples_seen_  = data['n_samples_seen']
+#     self._scalers[proto]    = scaler
 ```
 
 In `_detect_anomaly`:
 
 ```python
-# X       = preprocess_for_autoencoder(records, proto, self._scalers[proto])
+# X = preprocess_for_autoencoder(records, proto, self._scalers[proto])
 # session = self._autoencoders[proto]
-# input_name      = session.get_inputs()[0].name
+# input_name  = session.get_inputs()[0].name
 # X_reconstructed = session.run(None, {input_name: X})[0]
 # mse  = np.mean(np.power(X - X_reconstructed, 2))
 # rmse = float(np.sqrt(mse))
+# self.logger.info('RMSE %s: %.4f (threshold: %.4f)', proto.upper(), rmse, THRESHOLDS[proto])
+# return rmse > THRESHOLDS[proto], rmse
 return False, 0.0
 ```
 
