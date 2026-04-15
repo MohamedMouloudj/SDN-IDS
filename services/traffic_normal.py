@@ -82,7 +82,7 @@ def http_traffic():
     
     while True:
         subprocess.run(cmd, shell=True)
-        time.sleep(random.uniform(0.5, 2))
+        time.sleep(random.uniform(1, 3))
 
 
 def ftp_traffic():
@@ -103,7 +103,7 @@ s.sendmail('a@test.com','b@test.com','Subject: test\\n\\nhello');
 s.quit()" """,
             shell=True
         )
-        time.sleep(random.uniform(3, 8))
+        time.sleep(random.uniform(3, 7))
 
 
 # ----------- UDP (DNS) TRAFFIC -----------
@@ -123,7 +123,7 @@ def dns_traffic():
             shell=True
         )
 
-        time.sleep(random.uniform(0.5, 2))
+        time.sleep(random.uniform(0.2, 1))
 
 
 # ----------- ICMP TRAFFIC -----------
@@ -146,8 +146,8 @@ def icmp_traffic():
 
     while True:
         dst = random.choice(targets)
-        subprocess.run(f"ping -c 3 {dst}", shell=True)
-        time.sleep(random.uniform(1, 3))
+        subprocess.run(f"ping -c 5 {dst}", shell=True)
+        time.sleep(random.uniform(0.5, 1.5))
 
 
 # ----------- MAIN -----------
