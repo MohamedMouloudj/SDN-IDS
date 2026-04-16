@@ -10,13 +10,14 @@ Writes run_attack_log.json with exact unix timestamps for label_dataset.py.
 IMPORTANT: NORMAL_COLLECTION_MODE = False, ATTACK_COLLECTION_MODE = True in monitor.py
 """
 
+import os
 import subprocess
 import time
 import json
 
-DEFAULT_DURATION = 200  # seconds per attack
+DEFAULT_DURATION = 140  # seconds per attack
 PAUSE            = 50   # seconds to wait between attacks for flow stats to stabilize
-LOG_PATH         = 'run_attack_log.json'
+LOG_PATH         = '../ryu-controller/run_attack_log.json'
 
 # =========================
 # EXTERNAL (run on h_ext)
@@ -61,7 +62,7 @@ EXTERNAL_ATTACKS = [
 INTERNAL_ATTACKS = [
     {
         'name': 'SLOWLORIS',
-        'cmds': ['python3 slowloris.py'],
+        'cmds': ['python3 ../services/attacks/slowloris.py'],
         'duration': 400,
     },
     {
@@ -102,7 +103,13 @@ def determine_attack_suite():
 # Automatically determine the attack suite based on the node's IP
 ATTACKS = determine_attack_suite()
 
-log = []
+os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
+
+if os.path.exists(LOG_PATH):
+    with open(LOG_PATH, 'r') as f:
+        log = json.load(f)
+else:
+    log = []
 
 for attack in ATTACKS:
     duration = attack.get('duration', DEFAULT_DURATION)
@@ -113,8 +120,8 @@ for attack in ATTACKS:
     for cmd in attack['cmds']:
         p = subprocess.Popen(
             cmd, shell=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
+            # stdout=subprocess.DEVNULL,
+            # stderr=subprocess.DEVNULL
         )
         procs.append(p)
 

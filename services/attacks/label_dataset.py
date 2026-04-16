@@ -18,9 +18,9 @@ it is labeled as that attack type. Otherwise it is labeled Normal.
 import json
 import pandas as pd
 
-CSV_PATH        = 'traffic_log.csv'
-ATTACK_LOG_PATH = 'run_attack_log.json'
-OUTPUT_PATH     = 'traffic_log_labeled.csv'
+CSV_PATH        = '../../ryu-controller/traffic_log.csv'
+ATTACK_LOG_PATH = '../../ryu-controller/run_attack_log.json'
+OUTPUT_PATH     = '../../ryu-controller/traffic_log_labeled.csv'
 
 # Load attack windows
 with open(ATTACK_LOG_PATH, 'r') as f:
