@@ -49,7 +49,7 @@ from ryu.lib.packet import ether_types
 
 import csv
 import pandas as pd
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import MinMaxScaler, StandardScaler
 import numpy as np
 
 
@@ -69,8 +69,7 @@ from pipeline import (
 # Configuration
 # ---------------------------------------------------------------------------
 
-# Set to True only during attack traffic collection
-# Each detected attack window writes its timestamp to attack_log.json
+# Set to True only during attack traffic collection or normal traffic collection for autoencoder
 COLLECTION_MODE = True
 
 POLL_INTERVAL  = 10    # seconds between stat requests
@@ -127,47 +126,56 @@ class MonitorApp(switch.SimpleSwitch13):
         # Background polling thread
         self._poll_thread = hub.spawn(self._poll_loop)
 
-        # Load autoencoders
-        self._autoencoders = {
-            proto: rt.InferenceSession(f'{proto}.onnx')
-            for proto in ('icmp', 'tcp', 'udp')
-        }
 
-        # # Load fitted scalers
-        # ! h5 files will cause an issue with python 3.8, so I converted them to json and will load them manually here. (see train_autoencoders.ipynb for the conversion process)
-        # self._scalers = {}
-        # for proto in ('icmp', 'tcp', 'udp'):
-        #     with open(f'std_{proto}.pkl', 'rb') as f:
-        #         self._scalers[proto] = pickle.load(f)
-        self._scalers = {}
-        for proto in ('icmp', 'tcp', 'udp'):
-            with open(f'std_{proto}.json', 'r') as f:
-                data = json.load(f)
-            scaler = StandardScaler()
-            scaler.mean_            = np.array(data['mean'])
-            scaler.scale_           = np.array(data['scale'])
-            scaler.var_             = np.array(data['var'])
-            scaler.n_samples_seen_  = data['n_samples_seen']
-            self._scalers[proto]    = scaler
+        if not COLLECTION_MODE:
+            # Load autoencoders
+            self._autoencoders = {
+                proto: rt.InferenceSession(f'{proto}.onnx')
+                for proto in ('icmp', 'tcp', 'udp')
+            }
 
-        # CSV logging setup, for training data collection
-        file_exists = os.path.exists('traffic_log.csv')
-        self._csv_file = open('traffic_log.csv', 'a', newline='')
-        self._csv_writer = csv.DictWriter(self._csv_file, fieldnames=[
-            'Timestamp', 'Ip_src', 'Ip_dst', 'Same_ip', 'Port_src', 'Port_dst',
-            'Ip_protocole', 'Type_protocole',
-            'Icmp', 'Icmp_code', 'Icmp_type',
-            'Tcp', 'Udp',
-            'ACK', 'PSH', 'RST', 'SYN', 'FIN',
-            'Http', 'Ftp', 'Smtp', 'Dns',
-            'Flow_duration', 'Flow_dur_nsec',
-            'Packet_count', 'Bytes',
-            'Pkt_per_sec', 'Pkt_per_nsec',
-            'Bytes_per_sec', 'Bytes_per_nsec',
-            'Traffic', 'Attack_type',
-        ])
-        if not file_exists:
-            self._csv_writer.writeheader()
+             # # Load fitted scalers
+            # ! h5 files will cause an issue with python 3.8, so I converted them to json and will load them manually here. (see train_autoencoders.ipynb for the conversion process)
+            # self._scalers = {}
+            # for proto in ('icmp', 'tcp', 'udp'):
+            #     with open(f'std_{proto}.pkl', 'rb') as f:
+            #         self._scalers[proto] = pickle.load(f)
+            self._scalers_std = {}
+            self._scalers_mm  = {}
+            for proto in ('icmp', 'tcp', 'udp'):
+                with open(f'std_{proto}.json') as f:
+                    d = json.load(f)
+                s = StandardScaler()
+                s.mean_ = np.array(d['mean']); s.scale_ = np.array(d['scale'])
+                s.var_  = np.array(d['var']);  s.n_samples_seen_ = d['n_samples_seen']
+                self._scalers_std[proto] = s
+
+                with open(f'mm_{proto}.json') as f:
+                    d = json.load(f)
+                m = MinMaxScaler()
+                m.scale_ = np.array(d['scale']); m.min_ = np.array(d['min'])
+                m.data_min_ = np.array(d['data_min']); m.data_max_ = np.array(d['data_max'])
+                m.data_range_ = np.array(d['data_range']); m.n_samples_seen_ = d['n_samples_seen']
+                self._scalers_mm[proto] = m
+
+            # CSV logging setup, for training data collection
+            file_exists = os.path.exists('traffic_log.csv')
+            self._csv_file = open('traffic_log.csv', 'a', newline='')
+            self._csv_writer = csv.DictWriter(self._csv_file, fieldnames=[
+                'Timestamp', 'Ip_src', 'Ip_dst', 'Same_ip', 'Port_src', 'Port_dst',
+                'Ip_protocole', 'Type_protocole',
+                'Icmp', 'Icmp_code', 'Icmp_type',
+                'Tcp', 'Udp',
+                'ACK', 'PSH', 'RST', 'SYN', 'FIN',
+                'Http', 'Ftp', 'Smtp', 'Dns',
+                'Flow_duration', 'Flow_dur_nsec',
+                'Packet_count', 'Bytes',
+                'Pkt_per_sec', 'Pkt_per_nsec',
+                'Bytes_per_sec', 'Bytes_per_nsec',
+                'Traffic', 'Attack_type',
+            ])
+            if not file_exists:
+                self._csv_writer.writeheader()
     
 
     # ------------------------------------------------------------------
@@ -357,7 +365,11 @@ class MonitorApp(switch.SimpleSwitch13):
         -------
         tuple (is_attack: bool, rmse: float)
         """
-        X = preprocess_for_autoencoder(records, proto, self._scalers[proto])
+        if COLLECTION_MODE:
+            return False, 0.0 
+        X = preprocess_for_autoencoder(records, proto,
+                                self._scalers_std[proto],
+                                self._scalers_mm[proto])
         session = self._autoencoders[proto]
         input_name  = session.get_inputs()[0].name
         X_reconstructed = session.run(None, {input_name: X})[0]
@@ -365,7 +377,6 @@ class MonitorApp(switch.SimpleSwitch13):
         rmse = float(np.sqrt(mse))
         self.logger.info('RMSE %s: %.4f (threshold: %.4f)', proto.upper(), rmse, THRESHOLDS[proto])
         return rmse > THRESHOLDS[proto], rmse
-        # return False, 0.0
 
     # ------------------------------------------------------------------
     # AI stub (replace bodies when models are integrated)

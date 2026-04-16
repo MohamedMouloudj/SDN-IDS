@@ -20,6 +20,35 @@ Conventions
 * Every public function has a complete docstring (purpose, params, returns).
 * Helper/private functions are prefixed with an underscore.
 * No global state. No RYU imports. No DB imports.
+
+WORKFLOW GUIDE
+--------------
+Stage 1 — collect normal traffic (no models yet):
+    - COLLECTION_MODE = True in monitor.py
+    - _detect_anomaly() returns (False, 0.0) — bypass autoencoder entirely
+    - Run traffic_normal.py on h1/h2/h3 for 15-30 minutes
+    - Result: traffic_log.csv with Traffic='Normal' rows only
+
+Stage 2 — train autoencoders (offline, in notebook):
+    - Open train_autoencoders.ipynb
+    - Run Pearson heatmap to decide which columns to drop
+    - Update AUTOENCODER_FEATURES, AUTOENCODER_STD_COLS, AUTOENCODER_MM_COLS
+      in THIS file to match exactly what the notebook used
+    - Run training cells → produces icmp.onnx, tcp.onnx, udp.onnx,
+      std_{proto}.json, mm_{proto}.json, autoencoder_features.json
+    - Update THRESHOLD_ICMP/TCP/UDP in monitor.py with printed values
+
+Stage 3 — collect labelled attack traffic (models exist):
+    - COLLECTION_MODE = True in monitor.py (mitigation stays OFF)
+    - Uncomment autoencoder blocks in monitor.py
+    - Run run_attack.py → produces run_attack_log.json
+    - Run label_dataset.py → produces traffic_log_labeled.csv
+    - Result: balanced dataset for RF/SVM training
+
+Stage 4 — train classifiers + integrate:
+    - Train RF and SVM on traffic_log_labeled.csv
+    - Fill in _classify_attack() stub in monitor.py
+    - Set COLLECTION_MODE = False for live IDS operation
 """
 
 from __future__ import annotations
@@ -45,24 +74,63 @@ PROTO_MAP: Dict[int, str] = {1: 'icmp', 6: 'tcp', 17: 'udp'}
 # Index order: NS WCR ECE URG ACK PSH RST SYN FIN
 _TCP_FLAG_NAMES = ('NS', 'WCR', 'ECE', 'URG', 'ACK', 'PSH', 'RST', 'SYN', 'FIN')
 
-# Feature columns expected by each autoencoder model.
+# ---------------------------------------------------------------------------
+# Autoencoder feature configuration
+# ---------------------------------------------------------------------------
+# NOTE: These lists are the DEFAULT values before Pearson analysis.
+#       After running the correlation heatmap in train_autoencoders.ipynb
+#       and deciding which columns to drop, paste the updated lists here.
+#
+#       The notebook's final cell prints the exact lists to paste.
+#       The three dicts (FEATURES, STD_COLS, MM_COLS) must all be consistent
+#       with each other and with what the trained models expect.
+#
+# "Bytes" is listed here but is very likely to be dropped after correlation
+# analysis (highly correlated with Bytes_per_sec / Bytes_per_nsec).
+# Similarly Pkt_per_nsec is often redundant with Pkt_per_sec.
+# Leave them in until the heatmap confirms it.
+
 AUTOENCODER_FEATURES: Dict[str, List[str]] = {
     'icmp': [
         'Port_dst', 'Icmp', 'Icmp_type', 'Tcp', 'ACK', 'PSH', 'RST', 'SYN',
         'FIN', 'Http', 'Smtp', 'Ftp', 'Udp', 'Dns',
         'Flow_duration', 'Packet_count', 'Same_ip', 'Bytes',
+        'Pkt_per_sec', 'Bytes_per_sec', 'Bytes_per_nsec',
     ],
     'tcp': [
         'Port_dst', 'Icmp', 'Tcp', 'ACK', 'PSH', 'RST', 'SYN', 'FIN',
         'Http', 'Ftp', 'Smtp', 'Udp', 'Flow_duration', 'Packet_count',
         'Same_ip', 'Bytes',
+        'Pkt_per_sec', 'Bytes_per_sec', 'Bytes_per_nsec',
     ],
     'udp': [
         'Port_dst', 'Icmp', 'Tcp', 'ACK', 'PSH', 'RST', 'SYN', 'FIN',
         'Http', 'Ftp', 'Smtp', 'Udp', 'Dns',
         'Flow_duration', 'Packet_count', 'Same_ip', 'Bytes',
+        'Pkt_per_sec', 'Bytes_per_sec', 'Bytes_per_nsec',
     ],
 }
+
+# Columns to scale with StandardScaler (duration counters, ICMP type).
+# These have large variance and outliers → zero-mean unit-variance is correct.
+AUTOENCODER_STD_COLS: Dict[str, List[str]] = {
+    'icmp': ['Flow_duration', 'Packet_count', 'Bytes', 'Icmp_type'],
+    'tcp':  ['Flow_duration', 'Packet_count', 'Bytes', 'Port_dst'],
+    'udp':  ['Flow_duration', 'Packet_count', 'Bytes'],
+}
+
+# Columns to scale with MinMaxScaler (rate features).
+# During a flood attack these go WAY above the training max → land outside
+# [0, 1] → reconstruction error spikes → anomaly detected. This is intentional.
+AUTOENCODER_MM_COLS: Dict[str, List[str]] = {
+    'icmp': ['Pkt_per_sec', 'Bytes_per_sec', 'Bytes_per_nsec'],
+    'tcp':  ['Pkt_per_sec', 'Bytes_per_sec', 'Bytes_per_nsec'],
+    'udp':  ['Pkt_per_sec', 'Bytes_per_sec', 'Bytes_per_nsec'],
+}
+
+# ---------------------------------------------------------------------------
+# Classifier feature configuration (unchanged)
+# ---------------------------------------------------------------------------
 
 # Feature columns expected by the Random Forest classifier.
 RF_FEATURES: List[str] = [
@@ -78,23 +146,13 @@ RF_MINMAX_COLS: List[str] = ['Pkt_per_sec', 'Flow_dur_nsec', 'Port_dst']
 RF_STANDARD_COLS: List[str] = ['Flow_duration', 'Packet_count']
 
 # Feature columns expected by the SVM classifier.
-# SVM uses the same feature set as RF but requires denser scaling,
-# so preprocessing is handled separately in preprocess_for_svm().
 SVM_FEATURES: List[str] = RF_FEATURES
 
-# SVM requires all features on the same scale, so every numeric
-# column is standardized, unlike RF which uses mixed scaling.
+# SVM requires all features on the same scale.
 SVM_SCALE_COLS: List[str] = [
     'Port_dst', 'Flow_duration', 'Flow_dur_nsec',
     'Packet_count', 'Pkt_per_sec',
 ]
-
-# Columns scaled with the fitted per-protocol StandardScaler for autoencoders.
-AUTOENCODER_SCALE_COLS: Dict[str, List[str]] = {
-    'icmp': ['Flow_duration', 'Packet_count', 'Bytes', 'Icmp_type'],
-    'tcp':  ['Flow_duration', 'Packet_count', 'Bytes', 'Port_dst'],
-    'udp':  ['Flow_duration', 'Packet_count', 'Bytes'],
-}
 
 # Human-readable attack class labels (must match training label encoding).
 ATTACK_LABELS: Dict[int, str] = {
@@ -128,24 +186,16 @@ def extract_flow_features(stat) -> Optional[Dict]:
     dict or None
         Feature dictionary on success.
         None if the flow's ip_proto is not ICMP/TCP/UDP (caller should skip).
-
-    Notes
-    -----
-    The returned dict contains ALL columns used by every downstream consumer
-    (autoencoders, classifiers). Callers select the subset
-    they need via AUTOENCODER_FEATURES or RF_FEATURES.
     """
     ip_proto = stat.match.get('ip_proto')
     if ip_proto not in PROTO_MAP:
         return None
 
-    proto = PROTO_MAP[ip_proto]
+    proto  = PROTO_MAP[ip_proto]
     src_ip = stat.match.get('ipv4_src', '')
     dst_ip = stat.match.get('ipv4_dst', '')
-
     same_ip = int(src_ip == dst_ip)
 
-    # Protocol-specific fields
     (
         port_src, port_dst,
         icmp_flag, icmp_code, icmp_type,
@@ -155,41 +205,33 @@ def extract_flow_features(stat) -> Optional[Dict]:
         proto_type_label,
     ) = _extract_proto_fields(stat, ip_proto)
 
-    # Rate features
-    pkt_per_sec, pkt_per_nsec = _safe_rate(stat.packet_count, stat.duration_sec, stat.duration_nsec)
-    bytes_per_sec, bytes_per_nsec = _safe_rate(stat.byte_count, stat.duration_sec, stat.duration_nsec)
+    pkt_per_sec,   pkt_per_nsec   = _safe_rate(stat.packet_count, stat.duration_sec, stat.duration_nsec)
+    bytes_per_sec, bytes_per_nsec = _safe_rate(stat.byte_count,   stat.duration_sec, stat.duration_nsec)
 
     return {
-        # Identifiers / metadata
-        'Ip_src':        src_ip,
-        'Ip_dst':        dst_ip,
-        'Same_ip':       same_ip,
-        'Port_src':      port_src,
-        'Port_dst':      port_dst,
-        'Ip_protocole':  proto,
+        'Ip_src':         src_ip,
+        'Ip_dst':         dst_ip,
+        'Same_ip':        same_ip,
+        'Port_src':       port_src,
+        'Port_dst':       port_dst,
+        'Ip_protocole':   proto,
         'Type_protocole': proto_type_label,
 
-        # Protocol flags
-        'Icmp':          icmp_flag,
-        'Icmp_code':     icmp_code,
-        'Icmp_type':     icmp_type,
-        'Tcp':           tcp_flag,
-        'Udp':           udp_flag,
+        'Icmp':      icmp_flag,
+        'Icmp_code': icmp_code,
+        'Icmp_type': icmp_type,
+        'Tcp':       tcp_flag,
+        'Udp':       udp_flag,
 
-        # TCP control flags
         'ACK': ack, 'PSH': psh, 'RST': rst, 'SYN': syn, 'FIN': fin,
 
-        # Application-layer flags
-        'Http': http, 'Ftp': ftp, 'Smtp': smtp,
-        'Dns': dns,
+        'Http': http, 'Ftp': ftp, 'Smtp': smtp, 'Dns': dns,
 
-        # Flow counters
-        'Flow_duration':  stat.duration_sec,
-        'Flow_dur_nsec':  stat.duration_nsec,
-        'Packet_count':   stat.packet_count,
-        'Bytes':          stat.byte_count,
+        'Flow_duration': stat.duration_sec,
+        'Flow_dur_nsec': stat.duration_nsec,
+        'Packet_count':  stat.packet_count,
+        'Bytes':         stat.byte_count,
 
-        # Derived rates
         'Pkt_per_sec':    pkt_per_sec,
         'Pkt_per_nsec':   pkt_per_nsec,
         'Bytes_per_sec':  bytes_per_sec,
@@ -213,28 +255,24 @@ def _extract_proto_fields(stat, ip_proto: int) -> Tuple:
     port_src = port_dst = 0
     icmp_code = icmp_type = -1
     icmp_flag = tcp_flag = udp_flag = 0
-    http  = ftp = smtp = dns  = 0
+    http = ftp = smtp = dns = 0
     ack = psh = rst = syn = fin = 0
     proto_type_label = ''
 
-    if ip_proto == 1:   # ICMP
-        icmp_flag  = 1
+    if ip_proto == 1:    # ICMP
+        icmp_flag = 1
         port_src = port_dst = -1
-        icmp_code  = stat.match.get('icmpv4_code', -1)
-        icmp_type  = stat.match.get('icmpv4_type', -1)
+        icmp_code = stat.match.get('icmpv4_code', -1)
+        icmp_type = stat.match.get('icmpv4_type', -1)
 
     elif ip_proto == 6:  # TCP
-        tcp_flag   = 1
-        port_src   = stat.match.get('tcp_src', 0)
-        port_dst   = stat.match.get('tcp_dst', 0)
-
-        # Application-layer detection by well-known port
+        tcp_flag  = 1
+        port_src  = stat.match.get('tcp_src', 0)
+        port_dst  = stat.match.get('tcp_dst', 0)
         proto_type_label, http, ftp, smtp = _classify_tcp_service(port_src, port_dst)
-
-        # TCP flags bitmask -> individual bits
-        raw_flags  = stat.match.get('tcp_flags', 0)
-        flags_bin  = bin(raw_flags)[2:].zfill(len(_TCP_FLAG_NAMES))
-        flag_dict  = dict(zip(_TCP_FLAG_NAMES, flags_bin))
+        raw_flags = stat.match.get('tcp_flags', 0)
+        flags_bin = bin(raw_flags)[2:].zfill(len(_TCP_FLAG_NAMES))
+        flag_dict = dict(zip(_TCP_FLAG_NAMES, flags_bin))
         ack = int(flag_dict.get('ACK', '0'))
         psh = int(flag_dict.get('PSH', '0'))
         rst = int(flag_dict.get('RST', '0'))
@@ -242,9 +280,9 @@ def _extract_proto_fields(stat, ip_proto: int) -> Tuple:
         fin = int(flag_dict.get('FIN', '0'))
 
     elif ip_proto == 17:  # UDP
-        udp_flag   = 1
-        port_src   = stat.match.get('udp_src', 0)
-        port_dst   = stat.match.get('udp_dst', 0)
+        udp_flag  = 1
+        port_src  = stat.match.get('udp_src', 0)
+        port_dst  = stat.match.get('udp_dst', 0)
         proto_type_label, dns = _classify_udp_service(port_src, port_dst)
 
     return (
@@ -272,9 +310,9 @@ def _classify_tcp_service(src_port: int, dst_port: int) -> Tuple[str, int, int, 
         http, ftp, smtp : binary flags (only one is 1)
     """
     ports = {src_port, dst_port}
-    if   ports & {80}:          return 'Http', 1, 0, 0 
-    elif ports & {20, 21}:      return 'Ftp',  0, 1, 0
-    elif ports & {25}:          return 'Smtp', 0, 0, 1
+    if   ports & {80}:      return 'Http', 1, 0, 0
+    elif ports & {20, 21}:  return 'Ftp',  0, 1, 0
+    elif ports & {25}:      return 'Smtp', 0, 0, 1
     return '', 0, 0, 0
 
 
@@ -291,7 +329,7 @@ def _classify_udp_service(src_port: int, dst_port: int) -> Tuple[str, int, int]:
     tuple (label, dns)
     """
     ports = {src_port, dst_port}
-    if   ports & {53}:       return 'DNS',  1
+    if ports & {53}:  return 'DNS', 1
     return '', 0
 
 
@@ -317,36 +355,36 @@ def _safe_rate(count: int, sec: int, nsec: int) -> Tuple[float, float]:
 # Section 2 - Preprocessing
 # ---------------------------------------------------------------------------
 
-def preprocess_for_autoencoder(
-    records: List[Dict],
-    protocol: str,
-    scaler,
-) -> np.ndarray:
+def preprocess_for_autoencoder(records, protocol, scaler_std, scaler_mm) -> np.ndarray:
     """Prepare a window of flow records for autoencoder inference.
 
-    Selects the correct feature subset, applies the fitted scaler to the
-    numeric columns listed in AUTOENCODER_SCALE_COLS, and returns a float32
-    NumPy array ready to be passed to model.evaluate() or model.predict().
+    Selects the protocol-specific feature subset, fills NaN with 0,
+    applies port filtering, then scales with:
+      - StandardScaler on AUTOENCODER_STD_COLS  (duration, count, Bytes)
+      - MinMaxScaler   on AUTOENCODER_MM_COLS   (rate features)
 
     Parameters
     ----------
-    records  : list of dict - raw feature dicts from extract_flow_features()
-    protocol : str - 'icmp' | 'tcp' | 'udp'
-    scaler   : fitted sklearn StandardScaler - loaded from std_<proto>.pkl
+    records    : list of dict - raw feature dicts from extract_flow_features()
+    protocol   : str - 'icmp' | 'tcp' | 'udp'
+    scaler_std : fitted sklearn StandardScaler loaded from std_<proto>.json
+    scaler_mm  : fitted sklearn MinMaxScaler   loaded from mm_<proto>.json
 
     Returns
     -------
     np.ndarray - shape (len(records), n_features), dtype float32
     """
     feature_cols = AUTOENCODER_FEATURES[protocol]
-    scale_cols   = AUTOENCODER_SCALE_COLS[protocol]
+    std_cols     = [c for c in AUTOENCODER_STD_COLS[protocol] if c in feature_cols]
+    mm_cols      = [c for c in AUTOENCODER_MM_COLS[protocol]  if c in feature_cols]
 
-    df = pd.DataFrame(records)[feature_cols].copy()
+    df = pd.DataFrame(records)[feature_cols].copy().fillna(0)
 
     if 'Port_dst' in df.columns:
         df['Port_dst'] = df['Port_dst'].apply(filter_port)
 
-    df[scale_cols] = scaler.transform(df[scale_cols])
+    df[std_cols] = scaler_std.transform(df[std_cols].values)
+    df[mm_cols]  = scaler_mm.transform(df[mm_cols].values)
 
     return df.values.astype(np.float32)
 
@@ -356,8 +394,7 @@ def preprocess_for_rf_classifier(records: List[Dict]) -> pd.DataFrame:
 
     Applies port filtering, MinMaxScaler on rate/port columns, and
     StandardScaler on flow duration and packet count. Scalers are fit on the
-    batch itself (matching the original monitor.py behaviour - no pre-saved
-    RF scalers exist).
+    batch itself (no pre-saved RF scalers — matches original monitor.py).
 
     Parameters
     ----------
@@ -367,29 +404,25 @@ def preprocess_for_rf_classifier(records: List[Dict]) -> pd.DataFrame:
     -------
     pd.DataFrame - scaled feature DataFrame ready for model_rf.predict()
     """
-    from sklearn.preprocessing import MinMaxScaler, StandardScaler  # local import keeps module lightweight
+    from sklearn.preprocessing import MinMaxScaler, StandardScaler
 
     df = pd.DataFrame(records)[RF_FEATURES].copy()
-
     df['Port_dst'] = df['Port_dst'].apply(filter_port)
 
-    # MinMax on rate / port columns
     mm_scaler = MinMaxScaler()
     df[RF_MINMAX_COLS] = mm_scaler.fit_transform(df[RF_MINMAX_COLS])
 
-    # Standard on flow-level counters
     std_scaler = StandardScaler()
     df[RF_STANDARD_COLS] = std_scaler.fit_transform(df[RF_STANDARD_COLS])
 
     return df
 
+
 def preprocess_for_svm_classifier(records: List[Dict]) -> np.ndarray:
     """[STUB] Prepare a window of flow records for SVM inference.
 
-    SVM is sensitive to feature scale, so ALL columns are scaled with
-    StandardScaler (unlike RF which uses mixed MinMax + Standard scaling).
-    Returns a float32 NumPy array instead of a DataFrame because sklearn
-    SVM expects a dense array input.
+    SVM requires all features on the same scale, so ALL numeric columns
+    are scaled with StandardScaler.
 
     Parameters
     ----------

@@ -52,22 +52,31 @@ In `__init__`:
 #     for proto in ('icmp', 'tcp', 'udp')
 # }
 
-# self._scalers = {}
+# self._scalers_std = {}
+# self._scalers_mm  = {}
 # for proto in ('icmp', 'tcp', 'udp'):
-#     with open(f'std_{proto}.json', 'r') as f:
-#         data = json.load(f)
-#     scaler = StandardScaler()
-#     scaler.mean_            = np.array(data['mean'])
-#     scaler.scale_           = np.array(data['scale'])
-#     scaler.var_             = np.array(data['var'])
-#     scaler.n_samples_seen_  = data['n_samples_seen']
-#     self._scalers[proto]    = scaler
+#     with open(f'std_{proto}.json') as f:
+#         d = json.load(f)
+#     s = StandardScaler()
+#     s.mean_ = np.array(d['mean']); s.scale_ = np.array(d['scale'])
+#     s.var_  = np.array(d['var']);  s.n_samples_seen_ = d['n_samples_seen']
+#     self._scalers_std[proto] = s
+
+#     with open(f'mm_{proto}.json') as f:
+#         d = json.load(f)
+#     m = MinMaxScaler()
+#     m.scale_ = np.array(d['scale']); m.min_ = np.array(d['min'])
+#     m.data_min_ = np.array(d['data_min']); m.data_max_ = np.array(d['data_max'])
+#     m.data_range_ = np.array(d['data_range']); m.n_samples_seen_ = d['n_samples_seen']
+#     self._scalers_mm[proto] = m
 ```
 
 In `_detect_anomaly`:
 
 ```python
-# X = preprocess_for_autoencoder(records, proto, self._scalers[proto])
+# X = preprocess_for_autoencoder(records, proto,
+#                               self._scalers_std[proto],
+#                               self._scalers_mm[proto])
 # session = self._autoencoders[proto]
 # input_name  = session.get_inputs()[0].name
 # X_reconstructed = session.run(None, {input_name: X})[0]
