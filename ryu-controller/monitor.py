@@ -69,16 +69,18 @@ from pipeline import (
 # Configuration
 # ---------------------------------------------------------------------------
 
-# Set to True only during attack traffic collection or normal traffic collection for autoencoder
-COLLECTION_MODE = True
+# Set to True only during normal traffic collection for autoencoder
+NORMAL_COLLECTION_MODE = False
+# Set to True during attack traffic collection for classifers
+ATTACK_COLLECTION_MODE = True
 
 POLL_INTERVAL  = 10    # seconds between stat requests
 BATCH_SIZE     = 30    # number of flows per protocol window before processing
 
 # Autoencoder detection thresholds (RMSE)
-THRESHOLD_ICMP = 0.0136
-THRESHOLD_TCP  = 0.0564
-THRESHOLD_UDP  = 0.3971
+THRESHOLD_ICMP = 0.014603
+THRESHOLD_TCP  = 0.116222
+THRESHOLD_UDP  = 0.026873
 
 THRESHOLDS: Dict[str, float] = {
     'icmp': THRESHOLD_ICMP,
@@ -127,7 +129,7 @@ class MonitorApp(switch.SimpleSwitch13):
         self._poll_thread = hub.spawn(self._poll_loop)
 
 
-        if not COLLECTION_MODE:
+        if not NORMAL_COLLECTION_MODE:
             # Load autoencoders
             self._autoencoders = {
                 proto: rt.InferenceSession(f'{proto}.onnx')
@@ -337,7 +339,7 @@ class MonitorApp(switch.SimpleSwitch13):
                 'ATTACK DETECTED  proto=%s  type=%s  attacker=%s  victim=%s  port=%s  rmse=%.4f',
                 proto, attack_type, attacker, victim, port, rmse,
             )
-            if not COLLECTION_MODE:
+            if not NORMAL_COLLECTION_MODE and not ATTACK_COLLECTION_MODE:
                 self._record_attack(proto, attack_type, attacker, victim, port)
 
         else:
@@ -365,7 +367,7 @@ class MonitorApp(switch.SimpleSwitch13):
         -------
         tuple (is_attack: bool, rmse: float)
         """
-        if COLLECTION_MODE:
+        if NORMAL_COLLECTION_MODE:
             return False, 0.0 
         X = preprocess_for_autoencoder(records, proto,
                                 self._scalers_std[proto],

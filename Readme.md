@@ -29,6 +29,37 @@ ryu-manager monitor.py
 > It runs on Python 3.10 (or higher, if you have it) which has an incompatible eventlet version.
 > Always activate `.ryu-env` first.
 
+## Wokfloe Guide
+
+**Stage 1 - collect normal traffic (no models yet):**
+
+- `NORMAL_COLLECTION_MODE = True` in [monitor.py](ryu-controller/monitor.py)
+- `_detect_anomaly()` returns `(False, 0.0)` - bypass autoencoder entirely
+- Run `traffic_normal.py` on h1/h2/h3 for 20-30 minutes
+- Result: `traffic_log.csv` with `Traffic='Normal'` rows only
+
+**Stage 2 - train autoencoders (offline, in notebook):**
+
+- Open [train_autoencoders.ipynb](notebooks/train_autoencoders.ipynb)
+- Run Pearson heatmap to decide which columns to drop
+- Update `AUTOENCODER_FEATURES`, `AUTOENCODER_STD_COLS`, `AUTOENCODER_MM_COLS` in `pipeline.py` file to match exactly what the notebook used
+- Run training cells -> produces `icmp.onnx`, `tcp.onnx`, `udp.onnx`, `std_{proto}.json`, `mm_{proto}.json`, `autoencoder_features.json`
+- Update `THRESHOLD_ICMP`/`TCP`/`UDP` in [monitor.py](ryu-controller/monitor.py) with printed values
+
+**Stage 3 - collect labelled attack traffic (models exist):**
+
+- `NORMAL_COLLECTION_MODE = False` and `ATTACK_COLLECTION_MODE = True` in [monitor.py](ryu-controller/monitor.py) (mitigation stays OFF)
+- Uncomment autoencoder blocks in [monitor.py](ryu-controller/monitor.py)
+- Run `run_attack.py` -> produces `run_attack_log.json`
+- Run `label_dataset.py` -> produces `traffic_log_labeled.csv`
+- Result: balanced dataset for RF/SVM training
+
+**Stage 4 - train classifiers + integrate:**
+
+- Train RF and SVM on `traffic_log_labeled.csv`
+- Fill in `_classify_attack()` stub in [monitor.py](ryu-controller/monitor.py)
+- Set `NORMAL_COLLECTION_MODE = False` and `ATTACK_COLLECTION_MODE = False` for live IDS operation
+
 ## Generating Normal Traffic
 
 ### Prerequisites
@@ -36,7 +67,7 @@ ryu-manager monitor.py
 #### 1. Ensure RYU monitor and switch are in collection mode
 
 ```python
-COLLECTION_MODE = True
+NORMAL_COLLECTION_MODE = True
 ```
 
 #### 2. Comment out model loading in `monitor.py`
@@ -138,16 +169,12 @@ watch -n 10 wc -l ./ryu-controller/traffic_log.csv
 
 Aim for at least 500 rows per protocol before stopping.
 
-### 5. Stop traffic and services
+### 5. Stop traffic
 
 ```bash
 h1 pkill -f traffic_normal.py
 h2 pkill -f traffic_normal.py
 h3 pkill -f traffic_normal.py
-http pkill python3
-ftp pkill python3
-smtp pkill python3
-dns pkill python3
 ```
 
 ### 6. Exit Mininet

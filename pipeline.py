@@ -20,35 +20,6 @@ Conventions
 * Every public function has a complete docstring (purpose, params, returns).
 * Helper/private functions are prefixed with an underscore.
 * No global state. No RYU imports. No DB imports.
-
-WORKFLOW GUIDE
---------------
-Stage 1 — collect normal traffic (no models yet):
-    - COLLECTION_MODE = True in monitor.py
-    - _detect_anomaly() returns (False, 0.0) — bypass autoencoder entirely
-    - Run traffic_normal.py on h1/h2/h3 for 15-30 minutes
-    - Result: traffic_log.csv with Traffic='Normal' rows only
-
-Stage 2 — train autoencoders (offline, in notebook):
-    - Open train_autoencoders.ipynb
-    - Run Pearson heatmap to decide which columns to drop
-    - Update AUTOENCODER_FEATURES, AUTOENCODER_STD_COLS, AUTOENCODER_MM_COLS
-      in THIS file to match exactly what the notebook used
-    - Run training cells → produces icmp.onnx, tcp.onnx, udp.onnx,
-      std_{proto}.json, mm_{proto}.json, autoencoder_features.json
-    - Update THRESHOLD_ICMP/TCP/UDP in monitor.py with printed values
-
-Stage 3 — collect labelled attack traffic (models exist):
-    - COLLECTION_MODE = True in monitor.py (mitigation stays OFF)
-    - Uncomment autoencoder blocks in monitor.py
-    - Run run_attack.py → produces run_attack_log.json
-    - Run label_dataset.py → produces traffic_log_labeled.csv
-    - Result: balanced dataset for RF/SVM training
-
-Stage 4 — train classifiers + integrate:
-    - Train RF and SVM on traffic_log_labeled.csv
-    - Fill in _classify_attack() stub in monitor.py
-    - Set COLLECTION_MODE = False for live IDS operation
 """
 
 from __future__ import annotations
@@ -91,41 +62,35 @@ _TCP_FLAG_NAMES = ('NS', 'WCR', 'ECE', 'URG', 'ACK', 'PSH', 'RST', 'SYN', 'FIN')
 # Leave them in until the heatmap confirms it.
 
 AUTOENCODER_FEATURES: Dict[str, List[str]] = {
-    'icmp': [
-        'Port_dst', 'Icmp', 'Icmp_type', 'Tcp', 'ACK', 'PSH', 'RST', 'SYN',
-        'FIN', 'Http', 'Smtp', 'Ftp', 'Udp', 'Dns',
-        'Flow_duration', 'Packet_count', 'Same_ip', 'Bytes',
-        'Pkt_per_sec', 'Bytes_per_sec', 'Bytes_per_nsec',
+    "icmp": ["Port_dst", "Icmp", "Icmp_type", "Tcp", "ACK", "PSH", "RST", "SYN", "FIN", "Http",
+        "Smtp", "Ftp", "Udp", "Dns", "Flow_duration", "Packet_count", "Same_ip",
+        "Pkt_per_sec", "Bytes_per_sec"
     ],
-    'tcp': [
-        'Port_dst', 'Icmp', 'Tcp', 'ACK', 'PSH', 'RST', 'SYN', 'FIN',
-        'Http', 'Ftp', 'Smtp', 'Udp', 'Flow_duration', 'Packet_count',
-        'Same_ip', 'Bytes',
-        'Pkt_per_sec', 'Bytes_per_sec', 'Bytes_per_nsec',
+
+    "tcp": ["Port_dst", "Icmp", "Tcp", "ACK", "PSH", "RST", "SYN", "FIN", "Http", "Ftp", "Smtp",
+        "Udp", "Flow_duration", "Packet_count", "Same_ip", "Pkt_per_sec", "Bytes_per_sec"
     ],
-    'udp': [
-        'Port_dst', 'Icmp', 'Tcp', 'ACK', 'PSH', 'RST', 'SYN', 'FIN',
-        'Http', 'Ftp', 'Smtp', 'Udp', 'Dns',
-        'Flow_duration', 'Packet_count', 'Same_ip', 'Bytes',
-        'Pkt_per_sec', 'Bytes_per_sec', 'Bytes_per_nsec',
+
+    "udp": ["Port_dst", "Icmp", "Tcp", "ACK", "PSH", "RST", "SYN", "FIN", "Http", "Ftp",
+        "Smtp", "Udp", "Dns", "Flow_duration", "Packet_count", "Same_ip", "Pkt_per_sec", "Bytes_per_sec"
     ],
 }
 
 # Columns to scale with StandardScaler (duration counters, ICMP type).
-# These have large variance and outliers → zero-mean unit-variance is correct.
+# These have large variance and outliers -> zero-mean unit-variance is correct.
 AUTOENCODER_STD_COLS: Dict[str, List[str]] = {
-    'icmp': ['Flow_duration', 'Packet_count', 'Bytes', 'Icmp_type'],
-    'tcp':  ['Flow_duration', 'Packet_count', 'Bytes', 'Port_dst'],
-    'udp':  ['Flow_duration', 'Packet_count', 'Bytes'],
+    "icmp": ["Flow_duration", "Packet_count", "Icmp_type"],
+    "tcp":  ["Flow_duration", "Packet_count", "Port_dst"],
+    "udp":  ["Flow_duration", "Packet_count"],
 }
 
 # Columns to scale with MinMaxScaler (rate features).
-# During a flood attack these go WAY above the training max → land outside
-# [0, 1] → reconstruction error spikes → anomaly detected. This is intentional.
+# During a flood attack these go WAY above the training max -> land outside
+# [0, 1] -> reconstruction error spikes -> anomaly detected. This is intentional.
 AUTOENCODER_MM_COLS: Dict[str, List[str]] = {
-    'icmp': ['Pkt_per_sec', 'Bytes_per_sec', 'Bytes_per_nsec'],
-    'tcp':  ['Pkt_per_sec', 'Bytes_per_sec', 'Bytes_per_nsec'],
-    'udp':  ['Pkt_per_sec', 'Bytes_per_sec', 'Bytes_per_nsec'],
+    "icmp": ["Pkt_per_sec", "Bytes_per_sec"],
+    "tcp":  ["Pkt_per_sec", "Bytes_per_sec"],
+    "udp":  ["Pkt_per_sec", "Bytes_per_sec"],
 }
 
 # ---------------------------------------------------------------------------
