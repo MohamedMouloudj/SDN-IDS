@@ -70,22 +70,13 @@ ryu-manager monitor.py
 NORMAL_COLLECTION_MODE = True
 ```
 
-#### 2. Comment out model loading in `monitor.py`
-
-Before running the monitor for data collection, the autoencoder models are not yet
-trained. Comment out the following blocks in `monitor.py`:
-
-```pythin
-COLLECTION_MODE = True
-```
-
-#### 3. Delete old CSV if it exists
+#### 2. Delete old CSV if it exists
 
 ```bash
 rm ryu-controller/traffic_log.csv
 ```
 
-#### 4. Start RYU
+#### 3. Start RYU
 
 ```bash
 cd ryu-controller
