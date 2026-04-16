@@ -49,6 +49,11 @@ DROP_FLUSH_THRESHOLD = 40   # write to DB after this many locally-counted drops
 FLOW_IDLE_TIMEOUT    = 60   # seconds before an inactive flow entry expires
 FLOW_HARD_TIMEOUT    = 120  # absolute seconds before a flow entry expires
 
+# s2 ports assignments
+S2_PORT_S1    = 1   # s1     (DMZ side)
+S2_PORT_S3    = 2   # s3     (LAN side)
+S2_PORT_H_EXT = 3   # h_ext  (external / internet)
+
 
 # ---------------------------------------------------------------------------
 # Helper: protocol detection
@@ -169,60 +174,90 @@ class SimpleSwitch13(app_manager.RyuApp):
 
         # DMZ policy only on s2
         if datapath.id == 2:
-            self._install_core_routing(datapath)
+            self._install_dmz_policy(datapath)
 
         self.logger.info('Switch %016x connected - table-miss rule installed.', datapath.id)
 
-    def _install_core_routing(self, datapath):
+    def _install_dmz_policy(self, datapath):
         """Install DMZ policy rules on the core switch (s2).
 
-        Policy:
-        - LAN -> DMZ: only port 80 (HTTP) is allowed
-        - DMZ -> LAN: blocked entirely (DMZ cannot initiate connections to LAN)
-        - LAN -> DMZ non-80: dropped
+        Priority structure
+        ------------------
+        30  h_ext  -> DMZ  port 80  ALLOW  (internet reaches HTTP)
+        30  DMZ    -> h_ext tcp_src 80 ALLOW  (HTTP replies back to internet)
+        20  LAN    -> DMZ  port 80  ALLOW  (internal users reach HTTP)
+        20  DMZ    -> LAN  tcp_src 80 ALLOW  (HTTP replies back to LAN)
+        10  h_ext  -> LAN            DROP   (internet cannot reach LAN)
+        10  LAN    -> DMZ  non-80    DROP   (LAN restricted to HTTP only)
+        10  DMZ    -> LAN  non-80    DROP   (DMZ cannot initiate to LAN)
         """
-        parser  = datapath.ofproto_parser
-
-        # ALLOW: LAN -> DMZ on port 80 only (out via port 1 toward s1)
-        match = parser.OFPMatch(
-            eth_type=ether_types.ETH_TYPE_IP,
-            ipv4_src=('192.168.20.0', '255.255.255.0'),
-            ipv4_dst=('192.168.10.0', '255.255.255.0'),
-            ip_proto=in_proto.IPPROTO_TCP,
-            tcp_dst=80,
-        )
-        self._add_flow(datapath, priority=20, match=match,
-                    actions=[parser.OFPActionOutput(1)])
-
-        # DROP: LAN -> DMZ on any other port
-        match = parser.OFPMatch(
-            eth_type=ether_types.ETH_TYPE_IP,
-            ipv4_src=('192.168.20.0', '255.255.255.0'),
-            ipv4_dst=('192.168.10.0', '255.255.255.0'),
-        )
-        self._add_flow(datapath, priority=10, match=match, actions=[])
-
-        # DROP: DMZ -> LAN (DMZ never initiates)
-        match = parser.OFPMatch(
-            eth_type=ether_types.ETH_TYPE_IP,
-            ipv4_src=('192.168.10.0', '255.255.255.0'),
-            ipv4_dst=('192.168.20.0', '255.255.255.0'),
-        )
-        self._add_flow(datapath, priority=10, match=match, actions=[])
-
-        # ALLOW: LAN -> DMZ HTTP reply (DMZ responding back to LAN)
-        match = parser.OFPMatch(
-            eth_type=ether_types.ETH_TYPE_IP,
-            ipv4_src=('192.168.10.0', '255.255.255.0'),
-            ipv4_dst=('192.168.20.0', '255.255.255.0'),
-            ip_proto=in_proto.IPPROTO_TCP,
-            tcp_src=80,
-        )
-        self._add_flow(datapath, priority=20, match=match,
-                    actions=[parser.OFPActionOutput(2)])
-
-        self.logger.info('DMZ policy rules installed on s2.')
-
+        parser = datapath.ofproto_parser
+ 
+        def allow(priority, match_kwargs, out_port):
+            self._add_flow(datapath, priority=priority,
+                           match=parser.OFPMatch(**match_kwargs),
+                           actions=[parser.OFPActionOutput(out_port)])
+ 
+        def drop(priority, match_kwargs):
+            self._add_flow(datapath, priority=priority,
+                           match=parser.OFPMatch(**match_kwargs),
+                           actions=[])
+ 
+        base = {'eth_type': ether_types.ETH_TYPE_IP}
+ 
+        # -- priority 30: h_ext <-> DMZ port 80 -------------------------
+        # Internet -> HTTP server
+        allow(30, {**base,
+                   'ipv4_src': ('10.0.0.0', '255.0.0.0'),
+                   'ipv4_dst': ('192.168.10.0', '255.255.255.0'),
+                   'ip_proto': in_proto.IPPROTO_TCP,
+                   'tcp_dst': 80},
+              S2_PORT_S1)
+ 
+        # HTTP server -> internet (TCP reply, src port 80)
+        allow(30, {**base,
+                   'ipv4_src': ('192.168.10.0', '255.255.255.0'),
+                   'ipv4_dst': ('10.0.0.0', '255.0.0.0'),
+                   'ip_proto': in_proto.IPPROTO_TCP,
+                   'tcp_src': 80},
+              S2_PORT_H_EXT)
+ 
+        # -- priority 20: LAN <-> DMZ port 80 ----------------------------
+        # LAN -> HTTP server
+        allow(20, {**base,
+                   'ipv4_src': ('192.168.20.0', '255.255.255.0'),
+                   'ipv4_dst': ('192.168.10.0', '255.255.255.0'),
+                   'ip_proto': in_proto.IPPROTO_TCP,
+                   'tcp_dst': 80},
+              S2_PORT_S1)
+ 
+        # HTTP server -> LAN (TCP reply)
+        allow(20, {**base,
+                   'ipv4_src': ('192.168.10.0', '255.255.255.0'),
+                   'ipv4_dst': ('192.168.20.0', '255.255.255.0'),
+                   'ip_proto': in_proto.IPPROTO_TCP,
+                   'tcp_src': 80},
+              S2_PORT_S3)
+ 
+        # -- priority 10: catch-all DROP rules -----------------------------
+        # Internet -> LAN: blocked entirely
+        drop(10, {**base,
+                  'ipv4_src': ('10.0.0.0', '255.0.0.0'),
+                  'ipv4_dst': ('192.168.20.0', '255.255.255.0')})
+ 
+        # LAN -> DMZ non-80: blocked (LAN can only use HTTP)
+        drop(10, {**base,
+                  'ipv4_src': ('192.168.20.0', '255.255.255.0'),
+                  'ipv4_dst': ('192.168.10.0', '255.255.255.0')})
+ 
+        # DMZ -> LAN non-80: blocked (DMZ cannot initiate to LAN)
+        drop(10, {**base,
+                  'ipv4_src': ('192.168.10.0', '255.255.255.0'),
+                  'ipv4_dst': ('192.168.20.0', '255.255.255.0')})
+ 
+        self.logger.info('DMZ policy installed on s2 '
+                         '(h_ext=port%d, s1=port%d, s3=port%d).',
+                         S2_PORT_H_EXT, S2_PORT_S1, S2_PORT_S3)
 
     # ------------------------------------------------------------------
     # OpenFlow event: packet-in (core learning + policy logic)

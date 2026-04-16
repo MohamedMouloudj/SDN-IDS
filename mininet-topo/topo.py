@@ -6,22 +6,28 @@ SDN + IDS + AI Topology
 Logical DMZ and LAN separation using SDN (no router)
 
            c0 (Ryu Controller)
-                   |
-                 s2 (Core / Monitoring)
-                |       |
-         (DMZ) s1 --- s3 (LAN)
-                |       |-- h1
-                http    |-- h2
-                        |-- h3
-                        |-- ftp
-                        |-- smtp
-                        |-- dns
+                    |
+                  s2 (Core / Monitoring)
+               /    |      \
+       (DMZ) s1     h_ext    s3 (LAN)
+               |     (ext)    |-- h1  192.168.20.101
+             http             |-- h2  192.168.20.102
+          192.168.10.10       |-- h3  192.168.20.103  (LAN attacker)
+                              |-- ftp   192.168.20.10
+                              |-- smtp  192.168.20.11
+                              |-- dns   192.168.20.12
+
+Subnets:
+  DMZ      : 192.168.10.0/24
+  LAN      : 192.168.20.0/24
+  External : 10.0.0.0/8   (h_ext only)
 
 Notes:
 - DMZ subnet : 192.168.10.0/24 (http)
 - LAN subnet : 192.168.20.0/24 (hosts + servers)
 - s2 is the central monitoring point (IDS via Ryu flow stats)
 - Inter-subnet traffic is handled via SDN rules (no default routing)
+- h_ext simulates external traffic (e.g. Internet)
 """
 
 from mininet.net import Mininet
@@ -64,6 +70,15 @@ def myNetwork():
     smtp = net.addHost('smtp', cls=Host, ip='192.168.20.11/24', mac='00:00:00:00:02:11')
     dns = net.addHost('dns', cls=Host, ip='192.168.20.12/24', mac='00:00:00:00:02:12')
 
+
+    info('*** External host (internet attacker)\n')
+    h_ext = net.addHost(
+        'h_ext',
+        cls=Host,
+        ip='10.0.0.1/8',
+        mac='00:00:00:00:03:01'
+    )
+
     info('*** Links\n')
     # DMZ
     net.addLink(http, s1)
@@ -79,6 +94,9 @@ def myNetwork():
     net.addLink(s3, ftp)
     net.addLink(s3, smtp)
     net.addLink(s3, dns)
+
+    # External host connects directly to core switch
+    net.addLink(h_ext, s2)
 
 
     info('*** Build & start\n')
@@ -97,6 +115,10 @@ def myNetwork():
         host.cmd('ip route add 192.168.10.0/24 dev {}-eth0'.format(host.name))
 
     http.cmd('ip route add 192.168.20.0/24 dev http-eth0')
+    http.cmd('ip route add 10.0.0.0/8 dev http-eth0') 
+
+    # h_ext is "external" so it only has routes to the DMZ and not the LAN
+    h_ext.cmd('ip route add 192.168.10.0/24 dev h_ext-eth0')
 
     info('*** Ready\n')
     CLI(net)

