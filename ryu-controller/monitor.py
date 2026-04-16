@@ -158,24 +158,24 @@ class MonitorApp(switch.SimpleSwitch13):
                 m.data_range_ = np.array(d['data_range']); m.n_samples_seen_ = d['n_samples_seen']
                 self._scalers_mm[proto] = m
 
-            # CSV logging setup, for training data collection
-            file_exists = os.path.exists('traffic_log.csv')
-            self._csv_file = open('traffic_log.csv', 'a', newline='')
-            self._csv_writer = csv.DictWriter(self._csv_file, fieldnames=[
-                'Timestamp', 'Ip_src', 'Ip_dst', 'Same_ip', 'Port_src', 'Port_dst',
-                'Ip_protocole', 'Type_protocole',
-                'Icmp', 'Icmp_code', 'Icmp_type',
-                'Tcp', 'Udp',
-                'ACK', 'PSH', 'RST', 'SYN', 'FIN',
-                'Http', 'Ftp', 'Smtp', 'Dns',
-                'Flow_duration', 'Flow_dur_nsec',
-                'Packet_count', 'Bytes',
-                'Pkt_per_sec', 'Pkt_per_nsec',
-                'Bytes_per_sec', 'Bytes_per_nsec',
-                'Traffic', 'Attack_type',
-            ])
-            if not file_exists:
-                self._csv_writer.writeheader()
+        # CSV logging setup, for training data collection
+        file_exists = os.path.exists('traffic_log.csv')
+        self._csv_file = open('traffic_log.csv', 'a', newline='')
+        self._csv_writer = csv.DictWriter(self._csv_file, fieldnames=[
+            'Timestamp', 'Ip_src', 'Ip_dst', 'Same_ip', 'Port_src', 'Port_dst',
+            'Ip_protocole', 'Type_protocole',
+            'Icmp', 'Icmp_code', 'Icmp_type',
+            'Tcp', 'Udp',
+            'ACK', 'PSH', 'RST', 'SYN', 'FIN',
+            'Http', 'Ftp', 'Smtp', 'Dns',
+            'Flow_duration', 'Flow_dur_nsec',
+            'Packet_count', 'Bytes',
+            'Pkt_per_sec', 'Pkt_per_nsec',
+            'Bytes_per_sec', 'Bytes_per_nsec',
+            'Traffic', 'Attack_type',
+        ])
+        if not file_exists:
+            self._csv_writer.writeheader()
     
 
     # ------------------------------------------------------------------
