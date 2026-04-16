@@ -75,47 +75,8 @@ NORMAL_COLLECTION_MODE = True
 Before running the monitor for data collection, the autoencoder models are not yet
 trained. Comment out the following blocks in `monitor.py`:
 
-In `__init__`:
-
-```python
-# self._autoencoders = {
-#     proto: rt.InferenceSession(f'{proto}.onnx')
-#     for proto in ('icmp', 'tcp', 'udp')
-# }
-
-# self._scalers_std = {}
-# self._scalers_mm  = {}
-# for proto in ('icmp', 'tcp', 'udp'):
-#     with open(f'std_{proto}.json') as f:
-#         d = json.load(f)
-#     s = StandardScaler()
-#     s.mean_ = np.array(d['mean']); s.scale_ = np.array(d['scale'])
-#     s.var_  = np.array(d['var']);  s.n_samples_seen_ = d['n_samples_seen']
-#     self._scalers_std[proto] = s
-
-#     with open(f'mm_{proto}.json') as f:
-#         d = json.load(f)
-#     m = MinMaxScaler()
-#     m.scale_ = np.array(d['scale']); m.min_ = np.array(d['min'])
-#     m.data_min_ = np.array(d['data_min']); m.data_max_ = np.array(d['data_max'])
-#     m.data_range_ = np.array(d['data_range']); m.n_samples_seen_ = d['n_samples_seen']
-#     self._scalers_mm[proto] = m
-```
-
-In `_detect_anomaly`:
-
-```python
-# X = preprocess_for_autoencoder(records, proto,
-#                               self._scalers_std[proto],
-#                               self._scalers_mm[proto])
-# session = self._autoencoders[proto]
-# input_name  = session.get_inputs()[0].name
-# X_reconstructed = session.run(None, {input_name: X})[0]
-# mse  = np.mean(np.power(X - X_reconstructed, 2))
-# rmse = float(np.sqrt(mse))
-# self.logger.info('RMSE %s: %.4f (threshold: %.4f)', proto.upper(), rmse, THRESHOLDS[proto])
-# return rmse > THRESHOLDS[proto], rmse
-return False, 0.0
+```pythin
+COLLECTION_MODE = True
 ```
 
 #### 3. Delete old CSV if it exists
