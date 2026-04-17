@@ -7,6 +7,8 @@ Usage
 Reads traffic_log.csv and run_attack_log.json, then writes
 traffic_log_labeled.csv with correct Attack_type and Traffic columns.
 
+Note: I am not usign pandas and numpy here to avoid memory issues with large CSV files. Instead, I read and write line by line.
+
 How it works
 ------------
 Each row in traffic_log.csv has a Timestamp (unix float).
@@ -16,11 +18,18 @@ it is labeled as that attack type. Otherwise it is labeled Normal.
 """
 
 import json
-import pandas as pd
+import csv
+import os
 
 CSV_PATH        = '../../ryu-controller/traffic_log.csv'
 ATTACK_LOG_PATH = '../../ryu-controller/run_attack_log.json'
 OUTPUT_PATH     = '../../ryu-controller/traffic_log_labeled.csv'
+
+total_rows = 0
+attack_rows = 0
+attack_counts = {}
+
+print(f'Labeling dataset using attack windows from {ATTACK_LOG_PATH}...')
 
 # Load attack windows
 with open(ATTACK_LOG_PATH, 'r') as f:
@@ -31,34 +40,62 @@ for entry in attack_log:
     duration = entry['end'] - entry['start']
     print(f"  {entry['attack_type']:15s}  start={entry['start']:.2f}  end={entry['end']:.2f}  duration={duration:.0f}s")
 
-# Load CSV
-df = pd.read_csv(CSV_PATH)
-print(f'\nLoaded {len(df)} rows from {CSV_PATH}')
 
-# Reset labels -- start clean
-df['Traffic']     = 'Normal'
-df['Attack_type'] = ''
+print(f'\nProcessing {CSV_PATH} line-by-line to avoid memory limits...')
 
-# Label each row
-def get_label(ts):
-    for entry in attack_log:
-        if entry['start'] <= ts <= entry['end']:
-            return 'Attack', entry['attack_type']
-    return 'Normal', ''
+with open(CSV_PATH, 'r', newline='') as infile, open(OUTPUT_PATH, 'w', newline='') as outfile:
+    reader = csv.reader(infile)
+    writer = csv.writer(outfile)
+    
+    header = next(reader)
+    writer.writerow(header)
+    
+    # Find column indices
+    try:
+        ts_idx = header.index('Timestamp')
+        traffic_idx = header.index('Traffic')
+        attack_idx = header.index('Attack_type')
+    except ValueError as e:
+        print(f"Error parsing header: {e}")
+        exit(1)
 
-labels = df['Timestamp'].apply(get_label)
-df['Traffic']     = [l[0] for l in labels]
-df['Attack_type'] = [l[1] for l in labels]
+    for row in reader:
+        if not row: continue
+        
+        try:
+            ts = float(row[ts_idx])
+        except ValueError:
+            writer.writerow(row)
+            continue
+            
+        traffic_label = 'Normal'
+        attack_label = ''
+        
+        for entry in attack_log:
+            if entry['start'] <= ts <= entry['end']:
+                traffic_label = 'Attack'
+                attack_label = entry['attack_type']
+                break
+                
+        row[traffic_idx] = traffic_label
+        row[attack_idx] = attack_label
+        writer.writerow(row)
+        
+        total_rows += 1
+        
+        # stats
+        if traffic_label == 'Attack':
+            attack_rows += 1
+            attack_counts[attack_label] = attack_counts.get(attack_label, 0) + 1
 
-# Report
-attack_rows  = df[df['Traffic'] == 'Attack']
-normal_rows  = df[df['Traffic'] == 'Normal']
+normal_rows = total_rows - attack_rows
+
 print(f'\nLabeling results:')
-print(f'  Total rows  : {len(df)}')
-print(f'  Attack rows : {len(attack_rows)}')
-print(f'  Normal rows : {len(normal_rows)}')
+print(f'  Total rows  : {total_rows}')
+print(f'  Attack rows : {attack_rows}')
+print(f'  Normal rows : {normal_rows}')
 print(f'\nAttack type distribution:')
-print(attack_rows['Attack_type'].value_counts())
+for k, v in sorted(attack_counts.items(), key=lambda item: item[1], reverse=True):
+    print(f'{k:15} {v}')
 
-df.to_csv(OUTPUT_PATH, index=False)
 print(f'\nLabeled dataset saved to {OUTPUT_PATH}')

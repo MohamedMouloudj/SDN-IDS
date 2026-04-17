@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "The collection of ML/DL models for the IDS"
 requires-python = ">=3.11"
 dependencies = [
+    "imbalanced-learn>=0.14.1",
     "keras>=3.14.0",
     "matplotlib>=3.10.8",
     "numpy>=2.4.4",
