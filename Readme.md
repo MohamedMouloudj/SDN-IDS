@@ -135,3 +135,21 @@ h3 pkill -f traffic_normal.py
 exit
 sudo mn -c
 ```
+
+## Notebooks
+
+All training notebooks are self-documented with markdown cells explaining
+each step, the reasoning behind preprocessing decisions, and model architecture
+details. No prior setup is required to read them.
+
+To retrain models locally, follow the steps inside each notebook in order:
+
+1. `train_autoencoders.ipynb` - anomaly detection models (ICMP, TCP, UDP)
+2. `train_compare_classifiers.ipynb` - RF and SVM comparison
+
+### Saving models as ONNX
+
+Due to memory constraints when converting large Random Forest models locally,
+ONNX conversion is handled via Google Colab.
+The Colab notebook for training and exporting RF.onnx is available here:
+[Google Colab - RF Training and ONNX Export](https://colab.research.google.com/drive/1pjMuCIn_HiNxQmmBZPJBGURdgprlaXYD?usp=sharing)
