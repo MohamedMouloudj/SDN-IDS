@@ -9,6 +9,7 @@ dependencies = [
     "matplotlib>=3.10.8",
     "numpy>=2.4.4",
     "onnx>=1.21.0",
+    "onnxmltools>=1.16.0",
     "pandas>=3.0.2",
     "scikit-learn>=1.8.0",
     "seaborn>=0.13.2",
