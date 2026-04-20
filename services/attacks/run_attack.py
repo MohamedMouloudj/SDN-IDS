@@ -141,6 +141,17 @@ def snapshot_csv(attack_name):
 
     print(f'[+] {"Appended" if file_exists else "Created"} {len(df)} rows to {out_path}')
 
+def flush_ovs_flows():
+    """Delete all learned flow entries from all switches before next attack."""
+    for switch in ['s1', 's2', 's3']:
+        subprocess.run(
+            f'sudo ovs-ofctl del-flows {switch}',
+            shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+    print('[+] Flushed OVS flow tables on s1, s2, s3')
+    # Wait for RYU to reinstall table-miss and DMZ rules
+    time.sleep(15)
+
 ATTACKS = determine_attack_suite()
 
 log = []
@@ -158,10 +169,11 @@ for attack in ATTACKS:
 
     # clear the monitor CSV before starting so only this attack's flows are captured
     print(f'\n[+] Clearing CSV for clean collection...')
+    flush_ovs_flows()
     reset_monitor_csv(attack['name'])
 
-    # small pause after clearing so monitor writes a fresh header on next poll
-    time.sleep(5)
+    # pause after clearing so monitor writes a fresh header on next poll and fresh flows only
+    time.sleep(15)
 
     print(f'[+] Starting {attack["name"]} (duration={duration}s)...')
     start = time.time()
