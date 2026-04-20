@@ -19,7 +19,6 @@ it is labeled as that attack type. Otherwise it is labeled Normal.
 
 import json
 import csv
-import os
 
 CSV_PATH        = '../../ryu-controller/traffic_log.csv'
 ATTACK_LOG_PATH = '../../ryu-controller/run_attack_log.json'

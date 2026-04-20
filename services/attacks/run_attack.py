@@ -1,13 +1,18 @@
-"""run_attack.py - Generate labeled attack traffic and log timestamps.
+"""run_attack.py - Generate labeled attack traffic, one CSV file per attack type.
 
 Usage
 -----
     sudo python3 run_attack.py
 
-Run OUTSIDE Mininet on h3 (the attacker host) via xterm or directly.
-Writes run_attack_log.json with exact unix timestamps for label_dataset.py.
+Each attack writes to its own CSV file (e.g. traffic_ICMP_flood.csv).
+This eliminates cross-attack contamination: every row in a file belongs
+to exactly one attack type with no background protocol noise from others.
+
+After collection, run label_dataset.py or directly use the per-attack CSVs
+in the classifier notebook without needing timestamp-based labelling at all.
 
 IMPORTANT: NORMAL_COLLECTION_MODE = False, ATTACK_COLLECTION_MODE = True in monitor.py
+IMPORTANT: monitor.py must write to the path set in CSV_PATH below before each attack.
 """
 
 import os
@@ -15,13 +20,12 @@ import subprocess
 import time
 import json
 
-DEFAULT_DURATION = 140  # seconds per attack
-PAUSE            = 50   # seconds to wait between attacks for flow stats to stabilize
+DEFAULT_DURATION = 140
+PAUSE            = 50
 LOG_PATH         = '../ryu-controller/run_attack_log.json'
+CSV_DIR          = '../ryu-controller/'
+MONITOR_CSV_PATH = '../ryu-controller/traffic_attack_raw.csv' # path monitor.py writes to
 
-# =========================
-# EXTERNAL (run on h_ext)
-# =========================
 EXTERNAL_ATTACKS = [
     {
         'name': 'ICMP_flood',
@@ -56,9 +60,6 @@ EXTERNAL_ATTACKS = [
     },
 ]
 
-# =========================
-# INTERNAL (run on h3)
-# =========================
 INTERNAL_ATTACKS = [
     {
         'name': 'SLOWLORIS',
@@ -75,54 +76,87 @@ INTERNAL_ATTACKS = [
     },
 ]
 
+
 def determine_attack_suite():
     try:
-        # hot IP from the system
         result = subprocess.run(['hostname', '-I'], capture_output=True, text=True)
         ips = result.stdout.strip().split()
-        
         for ip in ips:
             if ip.startswith('10.'):
-                print(f"[+] Detected external IP ({ip}). Loading EXTERNAL_ATTACKS.")
+                print(f'[+] Detected external IP ({ip}). Loading EXTERNAL_ATTACKS.')
                 return EXTERNAL_ATTACKS
             elif ip.startswith('192.168.20.'):
-                print(f"[+] Detected internal IP ({ip}). Loading INTERNAL_ATTACKS.")
+                print(f'[+] Detected internal IP ({ip}). Loading INTERNAL_ATTACKS.')
                 return INTERNAL_ATTACKS
     except Exception as e:
-        print(f"[-] Could not read IPs automatically: {e}")
+        print(f'[-] Could not read IPs automatically: {e}')
 
-    # fallback to asking the user
     while True:
-        choice = input("[?] Run (E)xternal or (I)nternal attacks? [e/i]: ").strip().lower()
+        choice = input('[?] Run (E)xternal or (I)nternal attacks? [e/i]: ').strip().lower()
         if choice.startswith('e'):
             return EXTERNAL_ATTACKS
         elif choice.startswith('i'):
             return INTERNAL_ATTACKS
         print("Please enter 'e' or 'i'.")
 
-# Automatically determine the attack suite based on the node's IP
-ATTACKS = determine_attack_suite()
 
+def reset_monitor_csv(attack_name):
+    """Clear only the attack raw CSV, never touching traffic_log.csv."""
+    if os.path.exists(MONITOR_CSV_PATH):
+        with open(MONITOR_CSV_PATH, 'r') as f:
+            header = f.readline()
+        with open(MONITOR_CSV_PATH, 'w') as f:
+            f.write(header)
+        print(f'[+] Cleared {MONITOR_CSV_PATH} for {attack_name}')
+    else:
+        print(f'[!] {MONITOR_CSV_PATH} not found - monitor may not be running')
+
+def snapshot_csv(attack_name):
+    """
+    Copy the current monitor CSV to a per-attack file and stamp Attack_type.
+    Called after each attack finishes.
+    """
+    import pandas as pd
+
+    if not os.path.exists(MONITOR_CSV_PATH):
+        print(f'[!] No CSV found at {MONITOR_CSV_PATH}, skipping snapshot.')
+        return
+
+    df = pd.read_csv(MONITOR_CSV_PATH)
+    if df.empty:
+        print(f'[!] CSV is empty for {attack_name}, skipping snapshot.')
+        return
+
+    # stamp labels - every row in this file is from this attack window
+    df['Traffic']     = 'Attack'
+    df['Attack_type'] = attack_name
+
+    out_path = os.path.join(CSV_DIR, f'traffic_{attack_name}.csv')
+    df.to_csv(out_path, index=False)
+    print(f'[+] Saved {len(df)} rows to {out_path}')
+
+
+ATTACKS = determine_attack_suite()
 os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
 
-if os.path.exists(LOG_PATH):
-    with open(LOG_PATH, 'r') as f:
-        log = json.load(f)
-else:
-    log = []
+log = []
 
 for attack in ATTACKS:
     duration = attack.get('duration', DEFAULT_DURATION)
-    print(f'\n[+] Starting {attack["name"]} (duration={duration}s)...')
+
+    # clear the monitor CSV before starting so only this attack's flows are captured
+    print(f'\n[+] Clearing CSV for clean collection...')
+    reset_monitor_csv(attack['name'])
+
+    # small pause after clearing so monitor writes a fresh header on next poll
+    time.sleep(5)
+
+    print(f'[+] Starting {attack["name"]} (duration={duration}s)...')
     start = time.time()
 
     procs = []
     for cmd in attack['cmds']:
-        p = subprocess.Popen(
-            cmd, shell=True,
-            # stdout=subprocess.DEVNULL,
-            # stderr=subprocess.DEVNULL
-        )
+        p = subprocess.Popen(cmd, shell=True)
         procs.append(p)
 
     time.sleep(duration)
@@ -132,10 +166,14 @@ for attack in ATTACKS:
         p.wait()
 
     end = time.time()
+
+    # snapshot the CSV immediately after attack stops
+    snapshot_csv(attack['name'])
+
     log.append({
         'attack_type': attack['name'],
-        'start': start,
-        'end': end
+        'start':       start,
+        'end':         end,
     })
 
     print(f'    start : {start:.2f}')
@@ -143,8 +181,12 @@ for attack in ATTACKS:
     print(f'[+] {attack["name"]} done. Pausing {PAUSE}s...')
     time.sleep(PAUSE)
 
-# save log
 with open(LOG_PATH, 'w') as f:
     json.dump(log, f, indent=2)
 
 print(f'\nAttack log saved to {LOG_PATH}')
+print(f'\nPer-attack CSV files written to {CSV_DIR}:')
+for attack in ATTACKS:
+    path = os.path.join(CSV_DIR, f'traffic_{attack["name"]}.csv')
+    if os.path.exists(path):
+        print(f'  {path}')

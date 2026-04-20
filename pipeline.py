@@ -221,7 +221,7 @@ def _extract_proto_fields(stat, ip_proto: int) -> Tuple:
     icmp_code = icmp_type = -1
     icmp_flag = tcp_flag = udp_flag = 0
     http = ftp = smtp = dns = 0
-    ack = psh = rst = syn = fin = 0
+    ack = psh = rst = syn = fin = -1
     proto_type_label = ''
 
     if ip_proto == 1:    # ICMP

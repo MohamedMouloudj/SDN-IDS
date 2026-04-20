@@ -90,6 +90,20 @@ THRESHOLDS: Dict[str, float] = {
 
 SVM_THRESHOLD = 0.5  # Placeholder until SVM model is trained
 
+CSV_FIELDNAMES = [
+    'Timestamp', 'Ip_src', 'Ip_dst', 'Same_ip', 'Port_src', 'Port_dst',
+    'Ip_protocole', 'Type_protocole',
+    'Icmp', 'Icmp_code', 'Icmp_type',
+    'Tcp', 'Udp',
+    'ACK', 'PSH', 'RST', 'SYN', 'FIN',
+    'Http', 'Ftp', 'Smtp', 'Dns',
+    'Flow_duration', 'Flow_dur_nsec',
+    'Packet_count', 'Bytes',
+    'Pkt_per_sec', 'Pkt_per_nsec',
+    'Bytes_per_sec', 'Bytes_per_nsec',
+    'Traffic', 'Attack_type',
+]
+
 # ---------------------------------------------------------------------------
 # Monitor app
 # ---------------------------------------------------------------------------
@@ -160,24 +174,28 @@ class MonitorApp(switch.SimpleSwitch13):
                 m.data_range_ = np.array(d['data_range']); m.n_samples_seen_ = d['n_samples_seen']
                 self._scalers_mm[proto] = m
 
-        # CSV logging setup, for training data collection
+            
+        # CSV logging setup
         file_exists = os.path.exists('traffic_log.csv')
         self._csv_file = open('traffic_log.csv', 'a', newline='')
-        self._csv_writer = csv.DictWriter(self._csv_file, fieldnames=[
-            'Timestamp', 'Ip_src', 'Ip_dst', 'Same_ip', 'Port_src', 'Port_dst',
-            'Ip_protocole', 'Type_protocole',
-            'Icmp', 'Icmp_code', 'Icmp_type',
-            'Tcp', 'Udp',
-            'ACK', 'PSH', 'RST', 'SYN', 'FIN',
-            'Http', 'Ftp', 'Smtp', 'Dns',
-            'Flow_duration', 'Flow_dur_nsec',
-            'Packet_count', 'Bytes',
-            'Pkt_per_sec', 'Pkt_per_nsec',
-            'Bytes_per_sec', 'Bytes_per_nsec',
-            'Traffic', 'Attack_type',
-        ])
+        self._csv_writer = csv.DictWriter(self._csv_file, fieldnames=CSV_FIELDNAMES)
         if not file_exists:
             self._csv_writer.writeheader()
+
+        self._attack_csv_file   = None
+        self._attack_csv_writer = None
+
+        if ATTACK_COLLECTION_MODE:
+            self._attack_csv_path = os.path.join(
+                os.path.dirname(__file__), 'traffic_attack_raw.csv'
+            )
+            attack_file_exists        = os.path.exists(self._attack_csv_path)
+            self._attack_csv_file     = open(self._attack_csv_path, 'a', newline='')
+            self._attack_csv_writer   = csv.DictWriter(
+                self._attack_csv_file, fieldnames=CSV_FIELDNAMES
+            )
+            if not attack_file_exists:
+                self._attack_csv_writer.writeheader()
     
 
     # ------------------------------------------------------------------
@@ -432,8 +450,18 @@ class MonitorApp(switch.SimpleSwitch13):
             features['Timestamp'] = datetime.now().timestamp()
             features['Traffic'] = traffic
             features['Attack_type'] = attack_type
-            self._csv_writer.writerow(features)
-            self._csv_file.flush()
+
+            if ATTACK_COLLECTION_MODE and self._attack_csv_writer:
+                self._attack_csv_writer.writerow(features)
+                self._row_counter = getattr(self, '_row_counter', 0) + 1
+                if self._row_counter % 100 == 0:
+                    self._attack_csv_file.flush()
+            else:
+                self._csv_writer.writerow(features)
+                self._row_counter = getattr(self, '_row_counter', 0) + 1
+                if self._row_counter % 100 == 0:
+                    self._csv_file.flush()
+                
         except Exception as exc:
             self.logger.error('Failed to persist packet record: %s', exc)
 
@@ -491,6 +519,11 @@ class MonitorApp(switch.SimpleSwitch13):
             session.close()
     
     def close(self):
-        """Flush and close the CSV file when RYU shuts down."""
-        self._csv_file.close()
+        """Flush and close the CSV files when RYU shuts down."""
+        if self._csv_file and not self._csv_file.closed:
+            self._csv_file.flush()
+            self._csv_file.close()
+        if self._attack_csv_file and not self._attack_csv_file.closed:
+            self._attack_csv_file.flush()
+            self._attack_csv_file.close()
         super().close()
