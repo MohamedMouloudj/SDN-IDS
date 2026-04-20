@@ -1,3 +1,13 @@
+## Requirements
+
+1. Install python (preferable python3.10) on system wide level
+2. Install the packages in [Hosts requirements](./hosts_required_packages.txt) on system wide level.
+3. Run these commands to disable reverse path filtering (for LAND_ATTACK)
+```sh
+sudo sysctl -w net.ipv4.conf.all.rp_filter=0
+sudo sysctl -w net.ipv4.conf.default.rp_filter=0
+```
+
 ## RYU Controller Environment
 
 RYU requires a dedicated Python 3.8 virtual environment due to compatibility
@@ -68,6 +78,7 @@ ryu-manager monitor.py
 
 ```python
 NORMAL_COLLECTION_MODE = True
+ATTACK_COLLECTION_MODE = False
 ```
 
 #### 2. Delete old CSV if it exists
@@ -135,6 +146,59 @@ h3 pkill -f traffic_normal.py
 exit
 sudo mn -c
 ```
+
+## Generating Attack Traffic
+
+## Prerequisites
+
+#### 1. Ensure RYU monitor and switch are in attack mode
+
+```python
+NORMAL_COLLECTION_MODE = False
+ATTACK_COLLECTION_MODE = True
+```
+
+#### 2. Delete old CSV if it exists
+
+```bash
+rm ryu-controller/traffic_log.csv
+```
+
+#### 3. Start RYU
+
+```bash
+cd ryu-controller
+source .ryu-env/bin/activate
+pip install -r requirements.txt
+ryu-manager monitor.py
+```
+
+---
+
+### 1. Start Mininet
+
+```bash
+cd mininet-topo
+sudo python3 topo.py
+```
+
+### 2. Start services
+
+```bash
+http python3 ../services/http_server.py &
+ftp python3 ../services/ftp_server.py &
+smtp python3 ../services/smtp_server.py &
+dns python3 ../services/dns_server.py &
+```
+
+### 3. Generate traffic
+
+```bash
+h3 python3 ../services/attacks/run_attack.py    # For internal attacks
+h_ext python3 ../services/attacks/run_attack.py # For external attacks
+```
+
+Attacks samples will be saved each per `csv` file based on attack class.
 
 ## Notebooks
 

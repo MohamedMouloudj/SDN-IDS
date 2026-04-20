@@ -1,4 +1,4 @@
-# Install these on the VM so theya re accessible by Mininet hosts
+# Install these on the VM so they are accessible by Mininet hosts
 
 pyftpdlib
 dnslib
