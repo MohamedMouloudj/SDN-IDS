@@ -110,7 +110,7 @@ def reset_monitor_csv(attack_name):
         print(f'[+] Cleared {MONITOR_CSV_PATH} for {attack_name}')
     else:
         print(f'[!] {MONITOR_CSV_PATH} not found - monitor may not be running')
-
+   
 def snapshot_csv(attack_name):
     """
     Copy the current monitor CSV to a per-attack file and stamp Attack_type.
@@ -132,9 +132,12 @@ def snapshot_csv(attack_name):
     df['Attack_type'] = attack_name
 
     out_path = os.path.join(CSV_DIR, f'traffic_{attack_name}.csv')
-    df.to_csv(out_path, index=False)
-    print(f'[+] Saved {len(df)} rows to {out_path}')
 
+    # append if file exists, write with header if new
+    file_exists = os.path.exists(out_path)
+    df.to_csv(out_path, mode='a', header=not file_exists, index=False)
+
+    print(f'[+] {"Appended" if file_exists else "Created"} {len(df)} rows to {out_path}')
 
 ATTACKS = determine_attack_suite()
 os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
