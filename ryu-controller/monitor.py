@@ -451,6 +451,7 @@ class MonitorApp(switch.SimpleSwitch13):
             features['Traffic'] = traffic
             features['Attack_type'] = attack_type
 
+<<<<<<< Updated upstream
             if ATTACK_COLLECTION_MODE and self._attack_csv_writer:
                 self._attack_csv_writer.writerow(features)
                 self._row_counter = getattr(self, '_row_counter', 0) + 1
@@ -462,6 +463,13 @@ class MonitorApp(switch.SimpleSwitch13):
                 self._row_counter = getattr(self, '_row_counter', 0) + 1
                 if self._row_counter % 100 == 0:
                     print(f'[+] {self._row_counter} rows written to {self._csv_path}')
+=======
+            self._row_counter += 1
+            if self._row_counter % 100 == 0:
+                if ATTACK_COLLECTION_MODE and self._attack_csv_writer:
+                    self._attack_csv_file.flush()
+                else:
+>>>>>>> Stashed changes
                     self._csv_file.flush()
 
         except Exception as exc:
