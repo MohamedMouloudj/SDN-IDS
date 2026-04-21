@@ -20,6 +20,8 @@ Usage
 
 import os
 import sys
+from dotenv import load_dotenv
+load_dotenv()
 
 from ryu.base import app_manager
 from ryu.controller import ofp_event
@@ -39,7 +41,7 @@ from models import Session, History, Packets_dropped
 # ---------------------------------------------------------------------------
 
 # Set to true fro attack data collection, it disables mitigation.
-COLLECTION_MODE = True
+COLLECTION_MODE = os.getenv('COLLECTION_MODE', 'False').lower() == 'true' or os.getenv('ATTACK_COLLECTION_MODE', 'False').lower() == 'true'
 
 # ---------------------------------------------------------------------------
 # Module-level constants
@@ -475,6 +477,7 @@ class SimpleSwitch13(app_manager.RyuApp):
         try:
             rows = (session.query(History.Protocole)
                     .filter(History.Protocole == 'icmp')
+                    .filter(History.Attacker == 'random')
                     .distinct()
                     .all())
             return {row.Protocole for row in rows}

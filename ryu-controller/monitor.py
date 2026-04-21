@@ -34,6 +34,8 @@ import switch
 import os
 import sys
 import json
+from dotenv import load_dotenv
+load_dotenv()
 
 
 from datetime import datetime
@@ -71,9 +73,9 @@ from pipeline import (
 # ---------------------------------------------------------------------------
 
 # Set to True only during normal traffic collection for autoencoder
-NORMAL_COLLECTION_MODE = False
+NORMAL_COLLECTION_MODE = os.getenv('NORMAL_COLLECTION_MODE', 'False').lower() == 'true'
 # Set to True during attack traffic collection for classifers
-ATTACK_COLLECTION_MODE = False
+ATTACK_COLLECTION_MODE = os.getenv('ATTACK_COLLECTION_MODE', 'False').lower() == 'true'
 
 POLL_INTERVAL  = 10    # seconds between stat requests
 BATCH_SIZE     = 30    # number of flows per protocol window before processing

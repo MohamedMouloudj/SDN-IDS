@@ -65,7 +65,7 @@ _TCP_FLAG_NAMES = ('NS', 'WCR', 'ECE', 'URG', 'ACK', 'PSH', 'RST', 'SYN', 'FIN')
 AUTOENCODER_FEATURES: Dict[str, List[str]] = {
     'icmp': ['Port_dst', 'Icmp', 'Icmp_type', 'Tcp', 'ACK', 'PSH', 'RST', 'SYN', 'FIN', 'Http', 'Smtp', 'Ftp', 'Udp', 'Dns', 'Flow_duration', 'Same_ip', 'Bytes_per_sec', 'Bytes_per_nsec', 'Bytes', 'Duration_per_packet', 'Avg_pkt_size'],
     'tcp': ['Port_dst', 'Icmp', 'Tcp', 'ACK', 'PSH', 'RST', 'SYN', 'FIN', 'Http', 'Ftp', 'Smtp', 'Udp', 'Flow_duration', 'Same_ip', 'Bytes_per_sec', 'Bytes_per_nsec', 'Bytes', 'Duration_per_packet', 'Avg_pkt_size'],
-    'udp': ['Port_dst', 'Icmp', 'Tcp', 'ACK', 'PSH', 'RST', 'SYN', 'FIN', 'Http', 'Ftp', 'Smtp', 'Udp', 'Dns', 'Flow_duration', 'Packet_count', 'Same_ip', 'Bytes_per_sec', 'Bytes_per_nsec', 'Bytes', 'Duration_per_packet', 'Avg_pkt_size']
+    'udp': ['Port_dst', 'Icmp', 'Tcp', 'ACK', 'PSH', 'RST', 'SYN', 'FIN', 'Http', 'Ftp', 'Smtp', 'Udp', 'Dns', 'Flow_duration', 'Same_ip', 'Bytes_per_sec', 'Bytes_per_nsec', 'Bytes', 'Duration_per_packet', 'Avg_pkt_size']
 }
 
 # Columns to scale with StandardScaler (duration counters, ICMP type).

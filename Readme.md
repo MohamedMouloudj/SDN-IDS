@@ -11,7 +11,7 @@ sudo sysctl -w net.ipv4.conf.default.rp_filter=0
 ## RYU Controller Environment
 
 RYU requires a dedicated Python 3.8 virtual environment due to compatibility
-constraints with eventlet. The environment is located at `.ryu-env/` inside
+constraints with `eventlet`. The environment is located at `.ryu-env/` inside
 the `ryu-controller/` folder.
 
 **Activate the environment:**
@@ -19,7 +19,7 @@ the `ryu-controller/` folder.
 ```bash
 cd ryu-controller
 source .ryu-env/bin/activate
-pip install eventlet=0.30.2
+pip install -r requirements.txt
 ```
 
 **Verify the correct ryu-manager is used:**
@@ -74,7 +74,7 @@ ryu-manager monitor.py
 
 ### Prerequisites
 
-#### 1. Ensure RYU monitor and switch are in collection mode
+#### 1. Ensure normal collection mode is on in `.env` file
 
 ```python
 NORMAL_COLLECTION_MODE = True
@@ -151,7 +151,7 @@ sudo mn -c
 
 ## Prerequisites
 
-#### 1. Ensure RYU monitor and switch are in attack mode
+#### 1. Ensure attack collection mode is on in `.env` 
 
 ```python
 NORMAL_COLLECTION_MODE = False

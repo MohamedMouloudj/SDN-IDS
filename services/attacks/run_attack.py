@@ -19,12 +19,16 @@ import os
 import subprocess
 import time
 import json
+from dotenv import load_dotenv
+load_dotenv()
 
 DEFAULT_DURATION = 140
 PAUSE            = 50
 LOG_PATH         = '../ryu-controller/run_attack_log.json'
 CSV_DIR          = '../ryu-controller/'
 MONITOR_CSV_PATH = '../ryu-controller/traffic_attack_raw.csv' # path monitor.py writes to
+
+COLLECTION_MODE = os.getenv('COLLECTION_MODE', 'False').lower() == 'true' or os.getenv('ATTACK_COLLECTION_MODE', 'False').lower() == 'true'
 
 EXTERNAL_ATTACKS = [
     {
@@ -63,11 +67,11 @@ EXTERNAL_ATTACKS = [
 ]
 
 INTERNAL_ATTACKS = [
-    {
-        'name': 'SLOWLORIS',
-        'cmds': ['python3 ../services/attacks/slowloris.py'],
-        'duration': 500,
-    },
+    # {
+    #     'name': 'SLOWLORIS',
+    #     'cmds': ['python3 ../services/attacks/slowloris.py'],
+    #     'duration': 500,
+    # },
     {
         'name': 'UDP_flood',
         'cmds': [
