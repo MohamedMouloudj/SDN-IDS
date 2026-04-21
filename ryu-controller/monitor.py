@@ -72,7 +72,7 @@ from pipeline import (
 # Set to True only during normal traffic collection for autoencoder
 NORMAL_COLLECTION_MODE = False
 # Set to True during attack traffic collection for classifers
-ATTACK_COLLECTION_MODE = True
+ATTACK_COLLECTION_MODE = False
 
 POLL_INTERVAL  = 10    # seconds between stat requests
 BATCH_SIZE     = 30    # number of flows per protocol window before processing
@@ -175,27 +175,28 @@ class MonitorApp(switch.SimpleSwitch13):
                 self._scalers_mm[proto] = m
 
             
-        # CSV logging setup
-        file_exists = os.path.exists('traffic_log.csv')
-        self._csv_file = open('traffic_log.csv', 'a', newline='')
-        self._csv_writer = csv.DictWriter(self._csv_file, fieldnames=CSV_FIELDNAMES)
-        if not file_exists:
-            self._csv_writer.writeheader()
+        if NORMAL_COLLECTION_MODE or ATTACK_COLLECTION_MODE:
+            # CSV logging setup
+            file_exists = os.path.exists('traffic_log.csv')
+            self._csv_file = open('traffic_log.csv', 'a', newline='')
+            self._csv_writer = csv.DictWriter(self._csv_file, fieldnames=CSV_FIELDNAMES)
+            if not file_exists:
+                self._csv_writer.writeheader()
 
-        self._attack_csv_file   = None
-        self._attack_csv_writer = None
+            self._attack_csv_file   = None
+            self._attack_csv_writer = None
 
-        if ATTACK_COLLECTION_MODE:
-            self._attack_csv_path = os.path.join(
-                os.path.dirname(__file__), 'traffic_attack_raw.csv'
-            )
-            attack_file_exists        = os.path.exists(self._attack_csv_path)
-            self._attack_csv_file     = open(self._attack_csv_path, 'a', newline='')
-            self._attack_csv_writer   = csv.DictWriter(
-                self._attack_csv_file, fieldnames=CSV_FIELDNAMES
-            )
-            if not attack_file_exists:
-                self._attack_csv_writer.writeheader()
+            if ATTACK_COLLECTION_MODE:
+                self._attack_csv_path = os.path.join(
+                    os.path.dirname(__file__), 'traffic_attack_raw.csv'
+                )
+                attack_file_exists        = os.path.exists(self._attack_csv_path)
+                self._attack_csv_file     = open(self._attack_csv_path, 'a', newline='')
+                self._attack_csv_writer   = csv.DictWriter(
+                    self._attack_csv_file, fieldnames=CSV_FIELDNAMES
+                )
+                if not attack_file_exists:
+                    self._attack_csv_writer.writeheader()
     
 
     # ------------------------------------------------------------------
@@ -363,12 +364,13 @@ class MonitorApp(switch.SimpleSwitch13):
         else:
             self.logger.info('Window verdict: Normal  proto=%s  rmse=%.4f', proto, rmse)
 
-        for record in records:
-            self._persist_packet(
-                record,
-                traffic='Attack' if is_attack else 'Normal',
-                attack_type=attack_type if is_attack else '',
-            )
+        if NORMAL_COLLECTION_MODE or ATTACK_COLLECTION_MODE:
+            for record in records:
+                self._persist_packet(
+                    record,
+                    traffic='Attack' if is_attack else 'Normal',
+                    attack_type=attack_type if is_attack else '',
+                )
 
 
     def _detect_anomaly(
