@@ -361,7 +361,7 @@ class MonitorApp(switch.SimpleSwitch13):
 
         if is_attack:
             df          = pd.DataFrame(records)
-            attack_type = self._classify_attack(records, proto)
+            attack_type = self._classify_attack(records)
             attacker    = identify_attacker(df)
             victim      = identify_victim(df)
             port        = 0 if proto == 'icmp' else df['Port_dst'].mode()[0]
@@ -410,13 +410,17 @@ class MonitorApp(switch.SimpleSwitch13):
         session = self._autoencoders[proto]
         input_name  = session.get_inputs()[0].name
         X_reconstructed = session.run(None, {input_name: X})[0]
-        mse  = np.mean(np.power(X - X_reconstructed, 2))
-        rmse = float(np.sqrt(mse))
-        self.logger.info('RMSE %s: %.4f (threshold: %.4f)', proto.upper(), rmse, THRESHOLDS[proto])
-        return rmse > THRESHOLDS[proto], rmse
+        # mse  = np.mean(np.power(X - X_reconstructed, 2))
+        # rmse = float(np.sqrt(mse))
+        # self.logger.info('RMSE %s: %.4f (threshold: %.4f)', proto.upper(), rmse, THRESHOLDS[proto])
+        # return rmse > THRESHOLDS[proto], rmse # if RMSE of the window exceeds the threshold, flag as attack
+        mse_each = np.mean(np.power(X - X_reconstructed, 2), axis=1)
+        rmse_each = np.sqrt(mse_each)
+        is_attack = bool(np.any(rmse_each > THRESHOLDS[proto]))
+        return is_attack, float(np.max(rmse_each))
 
 
-    def _classify_attack(self, records: List[dict], proto: str) -> str:
+    def _classify_attack(self, records: List[dict]) -> str:
         """Run the RF classifier on a detected attack window.
 
         Uses ONNX runtime for Python 3.8 compatibility.
