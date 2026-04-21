@@ -18,7 +18,7 @@ on top:
 
 Classifier integration (COMING LATER)
 --------------------------------------
-    7. Attack classification via RF / SVM when anomaly is detected.
+    7. Attack classification via RF when anomaly is detected.
     8. Write attack events to History table + let switch mitigate.
 
 Usage
@@ -59,8 +59,9 @@ import onnxruntime as rt
 from pipeline import (
     extract_flow_features,
     preprocess_for_autoencoder,
-    compute_rmse,
-    ATTACK_LABELS,
+    preprocess_for_rf_classifier,
+    decode_attack_labels,
+    majority_attack_type,  
     identify_attacker,
     identify_victim,
 )
@@ -78,9 +79,9 @@ POLL_INTERVAL  = 10    # seconds between stat requests
 BATCH_SIZE     = 30    # number of flows per protocol window before processing
 
 # Autoencoder detection thresholds (RMSE)
-THRESHOLD_ICMP = 0.014603
-THRESHOLD_TCP  = 0.116222
-THRESHOLD_UDP  = 0.026873
+THRESHOLD_ICMP = 0.062839
+THRESHOLD_TCP  = 0.152146
+THRESHOLD_UDP  = 0.058415
 
 THRESHOLDS: Dict[str, float] = {
     'icmp': THRESHOLD_ICMP,
@@ -88,20 +89,18 @@ THRESHOLDS: Dict[str, float] = {
     'udp':  THRESHOLD_UDP,
 }
 
-SVM_THRESHOLD = 0.5  # Placeholder until SVM model is trained
 
 CSV_FIELDNAMES = [
     'Timestamp', 'Ip_src', 'Ip_dst', 'Same_ip', 'Port_src', 'Port_dst',
     'Ip_protocole', 'Type_protocole',
     'Icmp', 'Icmp_code', 'Icmp_type',
-    'Tcp', 'Udp',
-    'ACK', 'PSH', 'RST', 'SYN', 'FIN',
-    'Http', 'Ftp', 'Smtp', 'Dns',
-    'Flow_duration', 'Flow_dur_nsec',
-    'Packet_count', 'Bytes',
+    'Tcp', 'Udp', 'ACK', 'PSH',
+    'RST', 'SYN', 'FIN', 'Http',
+    'Ftp', 'Smtp', 'Dns','Flow_duration',
+    'Flow_dur_nsec', 'Packet_count', 'Bytes',
     'Pkt_per_sec', 'Pkt_per_nsec',
     'Bytes_per_sec', 'Bytes_per_nsec',
-    'Traffic', 'Attack_type',
+    'Traffic', 'Attack_type', 'Duration_per_packet', 'Avg_pkt_size'
 ]
 
 # ---------------------------------------------------------------------------
@@ -122,7 +121,7 @@ class MonitorApp(switch.SimpleSwitch13):
     AI integration
     --------------
     * _detect_anomaly()  - runs autoencoder, compares RMSE to threshold.
-    * _classify_attack() - [stub] will run RF/SVM classifier.
+    * _classify_attack() - will run RF classifier.
     * _record_attack()   - writes attack event to History table.
     """
 
@@ -139,6 +138,12 @@ class MonitorApp(switch.SimpleSwitch13):
         # Per-protocol accumulation buffers: {protocol: [feature_dict, ...]}
         self._buffers: Dict[str, List[dict]] = defaultdict(list)
 
+        # CSV logging attributes
+        self._csv_file        = None
+        self._csv_writer      = None
+        self._attack_csv_file = None
+        self._attack_csv_writer = None
+
         # Background polling thread
         self._poll_thread = hub.spawn(self._poll_loop)
 
@@ -150,8 +155,8 @@ class MonitorApp(switch.SimpleSwitch13):
                 for proto in ('icmp', 'tcp', 'udp')
             }
 
-             # # Load fitted scalers
-            # ! h5 files will cause an issue with python 3.8, so I converted them to json and will load them manually here. (see train_autoencoders.ipynb for the conversion process)
+            # # Load fitted scalers
+            #! h5 files will cause an issue with python 3.8, so I converted them to json and will load them manually here. (see train_autoencoders.ipynb for the conversion process)
             # self._scalers = {}
             # for proto in ('icmp', 'tcp', 'udp'):
             #     with open(f'std_{proto}.pkl', 'rb') as f:
@@ -173,6 +178,16 @@ class MonitorApp(switch.SimpleSwitch13):
                 m.data_min_ = np.array(d['data_min']); m.data_max_ = np.array(d['data_max'])
                 m.data_range_ = np.array(d['data_range']); m.n_samples_seen_ = d['n_samples_seen']
                 self._scalers_mm[proto] = m
+            
+            # RF classifier
+            self._model_rf = rt.InferenceSession('RF.onnx')
+
+            # RF classifier: pickle version (just test if pkl runs on Python 3.8)
+            # with open('RF.pkl', 'rb') as f:
+            #     self._model_rf = pickle.load(f)
+
+            self._rf_scaler_mm  = self._load_scaler_json('rf_mm.json',  'minmax')
+            self._rf_scaler_std = self._load_scaler_json('rf_std.json', 'standard')
 
             
         if NORMAL_COLLECTION_MODE or ATTACK_COLLECTION_MODE:
@@ -182,9 +197,6 @@ class MonitorApp(switch.SimpleSwitch13):
             self._csv_writer = csv.DictWriter(self._csv_file, fieldnames=CSV_FIELDNAMES)
             if not file_exists:
                 self._csv_writer.writeheader()
-
-            self._attack_csv_file   = None
-            self._attack_csv_writer = None
 
             if ATTACK_COLLECTION_MODE:
                 self._attack_csv_path = os.path.join(
@@ -313,7 +325,7 @@ class MonitorApp(switch.SimpleSwitch13):
         """Extract one BATCH_SIZE window from the protocol buffer and process it.
 
         Pops the first BATCH_SIZE records, converts to a DataFrame, calls the
-        anomaly detection stub, and slides the buffer forward.
+        anomaly detection, and slides the buffer forward.
 
         Parameters
         ----------
@@ -336,7 +348,7 @@ class MonitorApp(switch.SimpleSwitch13):
         -----
         1. preprocess_for_autoencoder() -> X_array
         2. _detect_anomaly(X_array, proto) -> is_attack, rmse
-        3. If attack: _classify_attack() [stub] -> attack_type
+        3. If attack: _classify_attack() -> attack_type
         4. _record_attack() -> History table
 
         Parameters
@@ -372,6 +384,9 @@ class MonitorApp(switch.SimpleSwitch13):
                     attack_type=attack_type if is_attack else '',
                 )
 
+    # ------------------------------------------------------------------
+    # AI models integration
+    # ------------------------------------------------------------------
 
     def _detect_anomaly(
         self, records: List[dict], proto: str
@@ -400,21 +415,12 @@ class MonitorApp(switch.SimpleSwitch13):
         self.logger.info('RMSE %s: %.4f (threshold: %.4f)', proto.upper(), rmse, THRESHOLDS[proto])
         return rmse > THRESHOLDS[proto], rmse
 
-    # ------------------------------------------------------------------
-    # AI stub (replace bodies when models are integrated)
-    # ------------------------------------------------------------------
 
-    def _classify_attack(
-        self, records: List[dict], proto: str
-    ) -> str:
-        """[STUB] Run the Random Forest classifier on a detected attack window.
+    def _classify_attack(self, records: List[dict], proto: str) -> str:
+        """Run the RF classifier on a detected attack window.
 
-        Replace this body with:
-            from pipeline import (preprocess_for_classifier,
-                                  decode_attack_labels, majority_attack_type)
-            df    = preprocess_for_classifier(records)
-            preds = self._model_rf.predict(df)
-            return majority_attack_type(decode_attack_labels(preds))
+        Uses ONNX runtime for Python 3.8 compatibility.
+        Falls back to 'Unknown' on any error.
 
         Parameters
         ----------
@@ -425,7 +431,27 @@ class MonitorApp(switch.SimpleSwitch13):
         -------
         str - attack type label from ATTACK_LABELS
         """
-        return 'Unknown'
+        try:
+            X = preprocess_for_rf_classifier(
+                records,
+                self._rf_scaler_mm,
+                self._rf_scaler_std,
+            )
+
+            # --- ONNX version ---
+            input_name = self._model_rf.get_inputs()[0].name
+            preds = self._model_rf.run(None, {input_name: X})[0]
+
+            # --- pickle version ---
+            # preds = self._model_rf.predict(X)
+
+            labels = decode_attack_labels(preds)
+            attack_type = majority_attack_type(labels)
+            return attack_type
+
+        except Exception as exc:
+            self.logger.error('Classifier failed: %s', exc)
+            return 'Unknown'
 
     # ------------------------------------------------------------------
     # Database helpers
@@ -531,3 +557,35 @@ class MonitorApp(switch.SimpleSwitch13):
             self._attack_csv_file.flush()
             self._attack_csv_file.close()
         super().close()
+    
+    def _load_scaler_json(self, path: str, kind: str):
+        """Load a StandardScaler or MinMaxScaler from a JSON file.
+
+        Parameters
+        ----------
+        path : str  - filename relative to monitor.py directory
+        kind : str  - 'standard' or 'minmax'
+        """
+        full_path = os.path.join(os.path.dirname(__file__), path)
+        with open(full_path) as f:
+            d = json.load(f)
+
+        if kind == 'standard':
+            s = StandardScaler()
+            s.mean_           = np.array(d['mean'])
+            s.scale_          = np.array(d['scale'])
+            s.var_            = np.array(d['var'])
+            s.n_samples_seen_ = d['n_samples_seen']
+            return s
+
+        if kind == 'minmax':
+            m = MinMaxScaler()
+            m.scale_          = np.array(d['scale'])
+            m.min_            = np.array(d['min'])
+            m.data_min_       = np.array(d['data_min'])
+            m.data_max_       = np.array(d['data_max'])
+            m.data_range_     = np.array(d['data_range'])
+            m.n_samples_seen_ = d['n_samples_seen']
+            return m
+
+        raise ValueError(f'Unknown scaler kind: {kind}')

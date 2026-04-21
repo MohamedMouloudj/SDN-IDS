@@ -29,6 +29,7 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
+from sklearn.preprocessing import MinMaxScaler, StandardScaler
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -62,35 +63,26 @@ _TCP_FLAG_NAMES = ('NS', 'WCR', 'ECE', 'URG', 'ACK', 'PSH', 'RST', 'SYN', 'FIN')
 # Leave them in until the heatmap confirms it.
 
 AUTOENCODER_FEATURES: Dict[str, List[str]] = {
-    "icmp": ["Port_dst", "Icmp", "Icmp_type", "Tcp", "ACK", "PSH", "RST", "SYN", "FIN", "Http",
-        "Smtp", "Ftp", "Udp", "Dns", "Flow_duration", "Packet_count", "Same_ip",
-        "Pkt_per_sec", "Bytes_per_sec"
-    ],
-
-    "tcp": ["Port_dst", "Icmp", "Tcp", "ACK", "PSH", "RST", "SYN", "FIN", "Http", "Ftp", "Smtp",
-        "Udp", "Flow_duration", "Packet_count", "Same_ip", "Pkt_per_sec", "Bytes_per_sec"
-    ],
-
-    "udp": ["Port_dst", "Icmp", "Tcp", "ACK", "PSH", "RST", "SYN", "FIN", "Http", "Ftp",
-        "Smtp", "Udp", "Dns", "Flow_duration", "Packet_count", "Same_ip", "Pkt_per_sec", "Bytes_per_sec"
-    ],
+    'icmp': ['Port_dst', 'Icmp', 'Icmp_type', 'Tcp', 'ACK', 'PSH', 'RST', 'SYN', 'FIN', 'Http', 'Smtp', 'Ftp', 'Udp', 'Dns', 'Flow_duration', 'Same_ip', 'Bytes_per_sec', 'Bytes_per_nsec', 'Bytes', 'Duration_per_packet', 'Avg_pkt_size'],
+    'tcp': ['Port_dst', 'Icmp', 'Tcp', 'ACK', 'PSH', 'RST', 'SYN', 'FIN', 'Http', 'Ftp', 'Smtp', 'Udp', 'Flow_duration', 'Same_ip', 'Bytes_per_sec', 'Bytes_per_nsec', 'Bytes', 'Duration_per_packet', 'Avg_pkt_size'],
+    'udp': ['Port_dst', 'Icmp', 'Tcp', 'ACK', 'PSH', 'RST', 'SYN', 'FIN', 'Http', 'Ftp', 'Smtp', 'Udp', 'Dns', 'Flow_duration', 'Packet_count', 'Same_ip', 'Bytes_per_sec', 'Bytes_per_nsec', 'Bytes', 'Duration_per_packet', 'Avg_pkt_size']
 }
 
 # Columns to scale with StandardScaler (duration counters, ICMP type).
 # These have large variance and outliers -> zero-mean unit-variance is correct.
 AUTOENCODER_STD_COLS: Dict[str, List[str]] = {
-    "icmp": ["Flow_duration", "Packet_count", "Icmp_type"],
-    "tcp":  ["Flow_duration", "Packet_count", "Port_dst"],
-    "udp":  ["Flow_duration", "Packet_count"],
+    'icmp': ['Flow_duration', 'Icmp_type', 'Duration_per_packet', 'Avg_pkt_size', 'Port_dst', 'Bytes'],
+    'tcp': ['Flow_duration', 'Port_dst', 'Duration_per_packet', 'Avg_pkt_size', 'Bytes'],
+    'udp': ['Flow_duration', 'Port_dst', 'Duration_per_packet', 'Avg_pkt_size', 'Bytes']
 }
 
 # Columns to scale with MinMaxScaler (rate features).
 # During a flood attack these go WAY above the training max -> land outside
 # [0, 1] -> reconstruction error spikes -> anomaly detected. This is intentional.
 AUTOENCODER_MM_COLS: Dict[str, List[str]] = {
-    "icmp": ["Pkt_per_sec", "Bytes_per_sec"],
-    "tcp":  ["Pkt_per_sec", "Bytes_per_sec"],
-    "udp":  ["Pkt_per_sec", "Bytes_per_sec"],
+    'icmp': ['Bytes_per_sec', 'Bytes_per_nsec'],
+    'tcp': ['Bytes_per_sec', 'Bytes_per_nsec'],
+    'udp': ['Bytes_per_sec', 'Bytes_per_nsec']
 }
 
 # ---------------------------------------------------------------------------
@@ -99,16 +91,16 @@ AUTOENCODER_MM_COLS: Dict[str, List[str]] = {
 
 # Feature columns expected by the Random Forest classifier.
 RF_FEATURES: List[str] = [
-    'Port_dst', 'Icmp', 'Tcp', 'ACK', 'PSH', 'RST', 'SYN', 'FIN',
-    'Http', 'Ftp', 'Udp', 'Flow_duration', 'Flow_dur_nsec',
-    'Packet_count', 'Pkt_per_sec', 'Same_ip',
+    'Port_dst', 'Icmp', 'SYN', 'Ftp', 'Udp',
+    'Flow_dur_nsec', 'Packet_count', 'Pkt_per_sec',
+    'Same_ip', 'Duration_per_packet', 'Avg_pkt_size',
 ]
 
 # Columns scaled with MinMaxScaler before RF inference.
 RF_MINMAX_COLS: List[str] = ['Pkt_per_sec', 'Flow_dur_nsec', 'Port_dst']
 
 # Columns scaled with StandardScaler before RF inference.
-RF_STANDARD_COLS: List[str] = ['Flow_duration', 'Packet_count']
+RF_STANDARD_COLS: List[str] = ['Packet_count'] #? Updated after scaling and training
 
 # Feature columns expected by the SVM classifier.
 SVM_FEATURES: List[str] = RF_FEATURES
@@ -172,6 +164,9 @@ def extract_flow_features(stat) -> Optional[Dict]:
 
     pkt_per_sec,   pkt_per_nsec   = _safe_rate(stat.packet_count, stat.duration_sec, stat.duration_nsec)
     bytes_per_sec, bytes_per_nsec = _safe_rate(stat.byte_count,   stat.duration_sec, stat.duration_nsec)
+    duration_per_packet = (stat.duration_sec / (stat.packet_count + 1e-6))
+    avg_pkt_size = (bytes_per_sec / (pkt_per_sec + 1e-6)) if pkt_per_sec > 1e-6 else 0.0
+    avg_pkt_size = 0.0 if avg_pkt_size in (float('inf'), float('-inf')) else avg_pkt_size
 
     return {
         'Ip_src':         src_ip,
@@ -201,6 +196,9 @@ def extract_flow_features(stat) -> Optional[Dict]:
         'Pkt_per_nsec':   pkt_per_nsec,
         'Bytes_per_sec':  bytes_per_sec,
         'Bytes_per_nsec': bytes_per_nsec,
+
+        'Duration_per_packet': duration_per_packet,
+        'Avg_pkt_size':        avg_pkt_size,
     }
 
 
@@ -354,33 +352,33 @@ def preprocess_for_autoencoder(records, protocol, scaler_std, scaler_mm) -> np.n
     return df.values.astype(np.float32)
 
 
-def preprocess_for_rf_classifier(records: List[Dict]) -> pd.DataFrame:
-    """Prepare a window of flow records for Random Forest inference.
-
-    Applies port filtering, MinMaxScaler on rate/port columns, and
-    StandardScaler on flow duration and packet count. Scalers are fit on the
-    batch itself (no pre-saved RF scalers — matches original monitor.py).
+def preprocess_for_rf_classifier(
+    records: List[Dict],
+    scaler_mm: 'MinMaxScaler',
+    scaler_std: 'StandardScaler',
+) -> np.ndarray:
+    """Prepare a window of flow records for RF/classifier inference.
 
     Parameters
     ----------
-    records : list of dict - raw feature dicts from extract_flow_features()
+    records    : list of dict - raw feature dicts from extract_flow_features()
+    scaler_mm  : fitted MinMaxScaler  loaded from rf_mm.json
+    scaler_std : fitted StandardScaler loaded from rf_std.json
 
     Returns
     -------
-    pd.DataFrame - scaled feature DataFrame ready for model_rf.predict()
+    np.ndarray float32 - shape (len(records), len(RF_FEATURES))
     """
-    from sklearn.preprocessing import MinMaxScaler, StandardScaler
-
     df = pd.DataFrame(records)[RF_FEATURES].copy()
     df['Port_dst'] = df['Port_dst'].apply(filter_port)
 
-    mm_scaler = MinMaxScaler()
-    df[RF_MINMAX_COLS] = mm_scaler.fit_transform(df[RF_MINMAX_COLS])
+    mm_cols  = [c for c in RF_MINMAX_COLS  if c in df.columns]
+    std_cols = [c for c in RF_STANDARD_COLS if c in df.columns]
 
-    std_scaler = StandardScaler()
-    df[RF_STANDARD_COLS] = std_scaler.fit_transform(df[RF_STANDARD_COLS])
+    df[mm_cols]  = scaler_mm.transform(df[mm_cols].values)
+    df[std_cols] = scaler_std.transform(df[std_cols].values)
 
-    return df
+    return df.values.astype(np.float32)
 
 
 def preprocess_for_svm_classifier(records: List[Dict]) -> np.ndarray:
