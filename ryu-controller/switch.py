@@ -54,6 +54,8 @@ S2_PORT_S1    = 1   # s1     (DMZ side)
 S2_PORT_S3    = 2   # s3     (LAN side)
 S2_PORT_H_EXT = 3   # h_ext  (external / internet)
 
+# cookie value for flow entries installed by the learning process (not policy rules). I need it for cleanup in run_atatck.py
+LEARNED_FLOW_COOKIE = 0xdeadbeef  
 
 # ---------------------------------------------------------------------------
 # Helper: protocol detection
@@ -518,7 +520,7 @@ class SimpleSwitch13(app_manager.RyuApp):
     # ------------------------------------------------------------------
 
     def _add_flow(self, datapath, priority, match, actions,
-                  buffer_id=None, idle=0, hard=0):
+                  buffer_id=None, idle=0, hard=0, cookie=0):
         """Build and send an OFPFlowMod to install a flow entry on the switch.
 
         Parameters
@@ -530,6 +532,7 @@ class SimpleSwitch13(app_manager.RyuApp):
         buffer_id : int | None - if set, the switch releases the buffered packet
         idle      : int - idle timeout in seconds (0 = never)
         hard      : int - hard timeout in seconds (0 = never)
+        cookie    : int - optional identifier for this flow entry
         """
         ofproto = datapath.ofproto
         parser  = datapath.ofproto_parser
@@ -545,6 +548,7 @@ class SimpleSwitch13(app_manager.RyuApp):
             instructions=instructions,
             idle_timeout=idle,
             hard_timeout=hard,
+            cookie=cookie
         )
         if buffer_id is not None:
             kwargs['buffer_id'] = buffer_id
@@ -574,10 +578,11 @@ class SimpleSwitch13(app_manager.RyuApp):
 
         if msg.buffer_id != ofproto.OFP_NO_BUFFER:
             self._add_flow(datapath, priority=1, match=match, actions=actions,
-                           buffer_id=msg.buffer_id, idle=idle, hard=hard)
+                        buffer_id=msg.buffer_id, idle=idle, hard=hard,
+                        cookie=LEARNED_FLOW_COOKIE)
         else:
             self._add_flow(datapath, priority=1, match=match, actions=actions,
-                           idle=idle, hard=hard)
+                        idle=idle, hard=hard, cookie=LEARNED_FLOW_COOKIE)
             self._send_packet_out(datapath, msg, in_port, actions)
 
     def _send_packet_out(self, datapath, msg, in_port, actions):

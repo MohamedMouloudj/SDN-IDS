@@ -142,7 +142,7 @@ class MonitorApp(switch.SimpleSwitch13):
         # Background polling thread
         self._poll_thread = hub.spawn(self._poll_loop)
 
-
+        self._row_counter = 0
         if not NORMAL_COLLECTION_MODE:
             # Load autoencoders
             self._autoencoders = {
@@ -455,13 +455,15 @@ class MonitorApp(switch.SimpleSwitch13):
                 self._attack_csv_writer.writerow(features)
                 self._row_counter = getattr(self, '_row_counter', 0) + 1
                 if self._row_counter % 100 == 0:
+                    print(f'[+] {self._row_counter} rows written to {self._attack_csv_path}')
                     self._attack_csv_file.flush()
             else:
                 self._csv_writer.writerow(features)
                 self._row_counter = getattr(self, '_row_counter', 0) + 1
                 if self._row_counter % 100 == 0:
+                    print(f'[+] {self._row_counter} rows written to {self._csv_path}')
                     self._csv_file.flush()
-                
+
         except Exception as exc:
             self.logger.error('Failed to persist packet record: %s', exc)
 

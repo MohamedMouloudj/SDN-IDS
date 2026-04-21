@@ -66,7 +66,7 @@ INTERNAL_ATTACKS = [
     {
         'name': 'SLOWLORIS',
         'cmds': ['python3 ../services/attacks/slowloris.py'],
-        'duration': 400,
+        'duration': 500,
     },
     {
         'name': 'UDP_flood',
@@ -145,8 +145,11 @@ def flush_ovs_flows():
     """Delete all learned flow entries from all switches before next attack."""
     for switch in ['s1', 's2', 's3']:
         subprocess.run(
-            f'sudo ovs-ofctl del-flows {switch}',
-            shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            f'ovs-ofctl -O OpenFlow13 del-flows {switch} '
+            f'cookie=0xdeadbeef/-1',
+            shell=True,
+            capture_output=True,
+            text=True
         )
     print('[+] Flushed OVS flow tables on s1, s2, s3')
     # Wait for RYU to reinstall table-miss and DMZ rules
