@@ -177,7 +177,8 @@ for attack in ATTACKS:
     # clear the monitor CSV before starting so only this attack's flows are captured
     print(f'\n[+] Clearing CSV for clean collection...')
     flush_ovs_flows()
-    reset_monitor_csv(attack['name'])
+    if IS_PROD:
+        reset_monitor_csv(attack['name'])
 
     # pause after clearing so monitor writes a fresh header on next poll and fresh flows only
     time.sleep(15)
@@ -198,8 +199,9 @@ for attack in ATTACKS:
 
     end = time.time()
 
-    # snapshot the CSV immediately after attack stops
-    snapshot_csv(attack['name'])
+    if IS_PROD:
+        # snapshot the CSV immediately after attack stops
+        snapshot_csv(attack['name'])
 
     existing_entry = next((entry for entry in log if entry.get('attack_type') == attack['name']), None)
 
