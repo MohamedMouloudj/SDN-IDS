@@ -134,6 +134,8 @@ class MonitorApp(switch.SimpleSwitch13):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
+        _INTERNAL_SUBNETS = ('192.168.10.', '192.168.20.')
+
         # {dpid (int): datapath} - populated by EventOFPStateChange
         self.datapaths: Dict[int, object] = {}
 
@@ -526,6 +528,8 @@ class MonitorApp(switch.SimpleSwitch13):
         """
         session = Session()
         try:
+            now = datetime.now().timestamp()
+
             if attacker == 'random' and proto == 'icmp':
                 action = 'protocol_banned'
             elif attacker == 'random':
@@ -533,6 +537,17 @@ class MonitorApp(switch.SimpleSwitch13):
             else:
                 action = 'ip_banned'
             
+            previous = session.query(History).filter(
+                History.Attacker == attacker,
+                History.Action   == 'ip_banned',
+            ).count()
+
+            ban_duration = min(
+                switch.BASE_BAN_SECONDS * (2 ** previous),
+                switch.MAX_BAN_SECONDS,
+            )
+            ban_expiry = now + ban_duration if attacker != 'random' else 0.0
+
             row = History(
                 Timestamp   = datetime.now().timestamp(),
                 Attack_type = attack_type,
@@ -541,13 +556,17 @@ class MonitorApp(switch.SimpleSwitch13):
                 Port        = str(port),
                 Action      = action,   # still concerned about this 
                 Protocole   = proto,
+                Ban_expiry  = ban_expiry,
+                Offence_count = previous + 1,
             )
             session.add(row)
             session.commit()
-            self.logger.info(
-                'Attack recorded in History: type=%s attacker=%s victim=%s port=%s proto=%s',
-                attack_type, attacker, victim, port, proto,
-            )
+
+            if attacker != 'random':
+                self.logger.info(
+                    'IP %s banned for %ds (offence #%d)',
+                    attacker, ban_duration, previous + 1,
+                )
         except Exception as exc:
             session.rollback()
             self.logger.error('Failed to write History record: %s', exc)

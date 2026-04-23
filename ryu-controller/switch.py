@@ -18,6 +18,7 @@ Usage
     ryu-manager switch.py
 """
 
+import datetime
 import os
 import sys
 from dotenv import load_dotenv
@@ -42,6 +43,10 @@ from models import Session, History, Packets_dropped
 
 # Set to true fro attack data collection, it disables mitigation.
 COLLECTION_MODE = os.getenv('COLLECTION_MODE', 'False').lower() == 'true' or os.getenv('ATTACK_COLLECTION_MODE', 'False').lower() == 'true'
+
+BASE_BAN_SECONDS = 300   # 5 minutes for first offence
+MAX_BAN_SECONDS  = 3600  # 1 hour maximum
+
 
 # ---------------------------------------------------------------------------
 # Module-level constants
@@ -154,6 +159,8 @@ class SimpleSwitch13(app_manager.RyuApp):
         self.mac_to_port = {}
         # Local counter; flushed to DB every DROP_FLUSH_THRESHOLD drops
         self._drop_counter = 0
+        # Running total of bytes dropped in the current batch, for DB recording
+        self._drop_bytes   = 0
 
     # ------------------------------------------------------------------
     # OpenFlow event: switch connected
@@ -346,7 +353,7 @@ class SimpleSwitch13(app_manager.RyuApp):
 
                 # Track drops
                 if not actions:
-                    self._count_drop()
+                    self._count_drop(msg.total_len)
 
                 # install the flow entry and forward the packet
                 self._install_flow_and_forward(
@@ -434,8 +441,10 @@ class SimpleSwitch13(app_manager.RyuApp):
         """
         session = Session()
         try:
+            now = datetime.now().timestamp()
             rows = (session.query(History.Attacker)
                     .filter(History.Attacker != 'random')
+                    .filter(History.Ban_expiry > now)
                     .distinct()
                     .all())
             return {row.Attacker for row in rows}
@@ -455,8 +464,10 @@ class SimpleSwitch13(app_manager.RyuApp):
         """
         session = Session()
         try:
+            now = datetime.now().timestamp()
             rows = (session.query(History.Port)
                     .filter(History.Attacker == 'random')
+                    .filter(History.Ban_expiry > now)
                     .distinct()
                     .all())
             return {row.Port for row in rows}
@@ -475,9 +486,11 @@ class SimpleSwitch13(app_manager.RyuApp):
         """
         session = Session()
         try:
+            now = datetime.now().timestamp()
             rows = (session.query(History.Protocole)
                     .filter(History.Protocole == 'icmp')
                     .filter(History.Attacker == 'random')
+                    .filter(History.Ban_expiry > now)
                     .distinct()
                     .all())
             return {row.Protocole for row in rows}
@@ -488,16 +501,18 @@ class SimpleSwitch13(app_manager.RyuApp):
     # Drop counter
     # ------------------------------------------------------------------
 
-    def _count_drop(self):
+    def _count_drop(self, packet_bytes:int=0):
         """Increment the local drop counter and flush to DB at threshold.
 
         Avoids one DB write per drop by batching updates in groups of
         DROP_FLUSH_THRESHOLD (default 40).
         """
         self._drop_counter += 1
+        self._drop_bytes   += packet_bytes
         if self._drop_counter >= DROP_FLUSH_THRESHOLD:
             self._flush_drop_count()
             self._drop_counter = 0
+            self._drop_bytes   = 0
 
     def _flush_drop_count(self):
         """Persist the current batch of DROP_FLUSH_THRESHOLD drops to the DB.
@@ -511,8 +526,9 @@ class SimpleSwitch13(app_manager.RyuApp):
             entry = session.query(Packets_dropped).first()
             if entry:
                 entry.Count += DROP_FLUSH_THRESHOLD
+                entry.Size += DROP_FLUSH_THRESHOLD * self._drop_bytes / self._drop_counter if self._drop_counter > 0 else 0
             else:
-                session.add(Packets_dropped(Count=DROP_FLUSH_THRESHOLD))
+                session.add(Packets_dropped(Count=DROP_FLUSH_THRESHOLD, Size=0.0))
             session.commit()
             self.logger.debug('Flushed %d dropped packets to DB.', DROP_FLUSH_THRESHOLD)
         finally:

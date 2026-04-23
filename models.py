@@ -24,6 +24,8 @@ class History(Base):
     Port = Column(String(50))
     Action = Column(String(50))
     Protocole = Column(String(50))
+    Ban_expiry  = Column(Float, default=0.0) 
+    Offence_count = Column(Integer, default=1)
 
 
 class User(Base):
@@ -48,6 +50,7 @@ class Packets_dropped(Base):
     __tablename__ = 'packets_dropped'
     id = Column(Integer, primary_key=True)
     Count = Column(Integer)
+    Size = Column(Float, default=0.0)
 
 # Create the DB engine
 db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'sdn.db')

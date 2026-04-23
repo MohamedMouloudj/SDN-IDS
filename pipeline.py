@@ -449,9 +449,17 @@ def identify_attacker(df: pd.DataFrame) -> str:
     -------
     str - IP address string or 'random'
     """
-    if df['Ip_src'].nunique() == len(df):
-        return 'random'
-    return str(df['Ip_src'].value_counts().idxmax())
+    counts     = df['Ip_src'].value_counts()
+    top_ip     = counts.index[0]
+    top_count  = counts.iloc[0]
+    total      = len(df)
+
+    concentration = top_count / total
+
+    if concentration > 0.40:
+        return str(top_ip)
+
+    return 'random'
 
 
 def identify_victim(df: pd.DataFrame) -> str:
