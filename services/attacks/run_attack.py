@@ -28,7 +28,8 @@ LOG_PATH         = '../ryu-controller/run_attack_log.json'
 CSV_DIR          = '../ryu-controller/'
 MONITOR_CSV_PATH = '../ryu-controller/traffic_attack_raw.csv' # path monitor.py writes to
 
-COLLECTION_MODE = os.getenv('COLLECTION_MODE', 'False').lower() == 'true' or os.getenv('ATTACK_COLLECTION_MODE', 'False').lower() == 'true'
+COLLECTION_MODE = os.getenv('NORMAL_COLLECTION_MODE', 'False').lower() == 'true' or os.getenv('ATTACK_COLLECTION_MODE', 'False').lower() == 'true'
+IS_PROD = COLLECTION_MODE == False
 
 EXTERNAL_ATTACKS = [
     {
