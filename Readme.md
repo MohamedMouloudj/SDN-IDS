@@ -9,8 +9,8 @@ sudo sysctl -w net.ipv4.conf.default.rp_filter=0
 ```
 4. Create `.env` file at root level of fthis project and set these values as needed
 ```sh
-NORMAL_COLLECTION_MODE=<boolean> # True for normal traffic data collection | False for attack traffic data collection 
-ATTACK_COLLECTION_MODE=<boolean> # True for attack traffic data collection | False for normal traffic data collection 
+NORMAL_COLLECTION_MODE=<boolean>
+ATTACK_COLLECTION_MODE=<boolean>
 # Set them both to False for proeduction environment
 ```
 
@@ -165,7 +165,7 @@ sudo mn -c
 
 ## Generating Attack Traffic
 
-## Prerequisites
+### Prerequisites
 
 #### 1. Ensure attack collection mode is on in `.env` 
 
@@ -225,11 +225,6 @@ details. No prior setup is required to read them.
 To retrain models locally, follow the steps inside each notebook in order:
 
 1. `train_autoencoders.ipynb` - anomaly detection models (ICMP, TCP, UDP)
-2. `train_compare_classifiers.ipynb` - RF and SVM comparison
+2. `train_compare_classifiers.ipynb` - RF, SVM and XGBoost comparison
 
-### Saving models as ONNX
-
-Due to memory constraints when converting large Random Forest models locally,
-ONNX conversion is handled via Google Colab.
-The Colab notebook for training and exporting RF.onnx is available here:
-[Google Colab - RF Training and ONNX Export](https://colab.research.google.com/drive/1pjMuCIn_HiNxQmmBZPJBGURdgprlaXYD?usp=sharing)
+Ypu can find all my resulted models in [this drive folder](https://drive.google.com/drive/folders/1Gm4-iaPYOwlLjYZqSoaxU-h_UOzHFz6h?usp=sharing)
