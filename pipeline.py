@@ -438,8 +438,11 @@ def majority_attack_type(labels: List[str]) -> str:
 def identify_attacker(df: pd.DataFrame) -> str:
     """Determine the dominant attacker IP in a flow window.
 
-    If every source IP in the window is unique (fully distributed attack),
-    returns 'random'. Otherwise returns the most frequent source IP.
+    If the most frequent source IP accounts for more than 30% of the window,
+    it is considered the real attacker. This handles spoofed-source attacks
+    where legitimate IPs appear as sources, a spoofed flood distributes
+    flows across many IPs so no single one dominates.
+    If no single IP exceeds the 30% concentration, returns 'random'.
 
     Parameters
     ----------
@@ -456,7 +459,7 @@ def identify_attacker(df: pd.DataFrame) -> str:
 
     concentration = top_count / total
 
-    if concentration > 0.40:
+    if concentration > 0.30:
         return str(top_ip)
 
     return 'random'
