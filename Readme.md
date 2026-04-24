@@ -9,8 +9,9 @@ sudo sysctl -w net.ipv4.conf.default.rp_filter=0
 ```
 4. Create `.env` file at root level of fthis project and set these values as needed
 ```sh
-NORMAL_COLLECTION_MODE=<boolean> # True for normal traffic data collection | False for attack traffic data collection or proeduction environment
-ATTACK_COLLECTION_MODE=<boolean> # True for attack traffic data collection | False for normal traffic data collection or proeduction environment
+NORMAL_COLLECTION_MODE=<boolean> # True for normal traffic data collection | False for attack traffic data collection 
+ATTACK_COLLECTION_MODE=<boolean> # True for attack traffic data collection | False for normal traffic data collection 
+# Set them both to False for proeduction environment
 ```
 
 ## Initialize Database
