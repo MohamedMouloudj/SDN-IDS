@@ -561,16 +561,27 @@ class MonitorApp(switch.SimpleSwitch13):
             else:
                 action = 'ip_banned'
             
-            previous = session.query(History).filter(
-                History.Attacker == attacker,
-                History.Action   == 'ip_banned',
-            ).count()
+            if attacker == 'random':
+                # track offences for this specific vector
+                previous = session.query(History).filter(
+                    History.Attacker == 'random',
+                    History.Action == action,
+                    History.Protocole == proto,
+                    History.Port == str(port)
+                ).count()
+            else:
+                # track offences for this specific IP
+                previous = session.query(History).filter(
+                    History.Attacker == attacker,
+                    History.Action == 'ip_banned',
+                ).count()
 
             ban_duration = min(
                 switch.BASE_BAN_SECONDS * (2 ** previous),
                 switch.MAX_BAN_SECONDS,
             )
-            ban_expiry = now + ban_duration if attacker != 'random' else 0.0
+            
+            ban_expiry = now + ban_duration
 
             row = History(
                 Timestamp   = datetime.now().timestamp(),
@@ -578,7 +589,7 @@ class MonitorApp(switch.SimpleSwitch13):
                 Attacker    = attacker,
                 Victim      = victim,
                 Port        = str(port),
-                Action      = action,   # still concerned about this 
+                Action      = action,
                 Protocole   = proto,
                 Ban_expiry  = ban_expiry,
                 Offence_count = previous + 1,
