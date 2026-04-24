@@ -8,6 +8,16 @@ sudo sysctl -w net.ipv4.conf.all.rp_filter=0
 sudo sysctl -w net.ipv4.conf.default.rp_filter=0
 ```
 
+## Initialize Database
+```sh
+python3 models.py
+```
+
+Thi should create these tables:
+- **History**: stores detected attack events
+- **Packets_dropped**: stores some statistics on the overal attacks (count of dropped packet and bytes count)
+- **Users**: stores system users. For interface
+
 ## RYU Controller Environment
 
 RYU requires a dedicated Python 3.8 virtual environment due to compatibility
