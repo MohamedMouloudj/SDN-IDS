@@ -29,7 +29,9 @@ CSV_DIR          = '../ryu-controller/'
 MONITOR_CSV_PATH = '../ryu-controller/traffic_attack_raw.csv' # path monitor.py writes to
 
 COLLECTION_MODE = os.getenv('NORMAL_COLLECTION_MODE', 'False').lower() == 'true' or os.getenv('ATTACK_COLLECTION_MODE', 'False').lower() == 'true'
-IS_PROD = COLLECTION_MODE == False
+IS_PROD = not COLLECTION_MODE 
+
+print(f'[+] Running in {"PROD" if IS_PROD else "COLLECTION"} mode.')
 
 EXTERNAL_ATTACKS = [
     {
@@ -68,11 +70,11 @@ EXTERNAL_ATTACKS = [
 ]
 
 INTERNAL_ATTACKS = [
-    # {
-    #     'name': 'SLOWLORIS',
-    #     'cmds': ['python3 ../services/attacks/slowloris.py'],
-    #     'duration': 500,
-    # },
+    {
+        'name': 'SLOWLORIS',
+        'cmds': ['python3 ../services/attacks/slowloris.py'],
+        'duration': 500,
+    },
     {
         'name': 'UDP_flood',
         'cmds': [
@@ -178,7 +180,7 @@ for attack in ATTACKS:
     # clear the monitor CSV before starting so only this attack's flows are captured
     print(f'\n[+] Clearing CSV for clean collection...')
     flush_ovs_flows()
-    if IS_PROD:
+    if not IS_PROD:
         reset_monitor_csv(attack['name'])
 
     # pause after clearing so monitor writes a fresh header on next poll and fresh flows only
@@ -200,7 +202,7 @@ for attack in ATTACKS:
 
     end = time.time()
 
-    if IS_PROD:
+    if not IS_PROD:
         # snapshot the CSV immediately after attack stops
         snapshot_csv(attack['name'])
 
