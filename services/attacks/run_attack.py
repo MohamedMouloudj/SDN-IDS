@@ -111,6 +111,7 @@ def determine_attack_suite():
 
 def reset_monitor_csv(attack_name):
     """Clear only the attack raw CSV, never touching traffic_log.csv."""
+    print(f'\n[+] Clearing CSV for clean collection...')
     if os.path.exists(MONITOR_CSV_PATH):
         with open(MONITOR_CSV_PATH, 'r') as f:
             header = f.readline()
@@ -178,7 +179,6 @@ for attack in ATTACKS:
     duration = attack.get('duration', DEFAULT_DURATION)
 
     # clear the monitor CSV before starting so only this attack's flows are captured
-    print(f'\n[+] Clearing CSV for clean collection...')
     flush_ovs_flows()
     if not IS_PROD:
         reset_monitor_csv(attack['name'])
