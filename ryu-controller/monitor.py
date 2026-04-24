@@ -81,14 +81,20 @@ POLL_INTERVAL  = 10    # seconds between stat requests
 BATCH_SIZE     = 30    # number of flows per protocol window before processing
 
 # Autoencoder detection thresholds (RMSE)
-THRESHOLD_ICMP = 0.062839
-THRESHOLD_TCP  = 0.152146
-THRESHOLD_UDP  = 0.058415
+THRESHOLD_ICMP = 0.039247
+THRESHOLD_TCP  = 0.148770
+THRESHOLD_UDP  = 0.009950
 
 THRESHOLDS: Dict[str, float] = {
     'icmp': THRESHOLD_ICMP,
     'tcp':  THRESHOLD_TCP,
     'udp':  THRESHOLD_UDP,
+}
+
+ANOMALY_RATIO: Dict[str, float] = {
+    'icmp': 0.20,   # ICMP floods dominate quickly
+    'tcp':  0.30,   # TCP has more legitimate background traffic
+    'udp':  0.20,   # UDP floods dominate quickly
 }
 
 
@@ -418,9 +424,27 @@ class MonitorApp(switch.SimpleSwitch13):
         # rmse = float(np.sqrt(mse))
         # self.logger.info('RMSE %s: %.4f (threshold: %.4f)', proto.upper(), rmse, THRESHOLDS[proto])
         # return rmse > THRESHOLDS[proto], rmse # if RMSE of the window exceeds the threshold, flag as attack
+        
         mse_each = np.mean(np.power(X - X_reconstructed, 2), axis=1)
         rmse_each = np.sqrt(mse_each)
-        is_attack = bool(np.any(rmse_each > THRESHOLDS[proto]))
+        # is_attack = bool(np.any(rmse_each > THRESHOLDS[proto]))
+        # return is_attack, float(np.max(rmse_each))
+
+        # Instead of: is_attack = bool(np.any(rmse_each > threshold))
+        # Use: flag batch only if more than X% of flows exceed threshold
+
+        threshold = THRESHOLDS[proto]
+
+        anomalous_count = np.sum(rmse_each > threshold)
+        anomaly_ratio   = anomalous_count / len(rmse_each)
+        is_attack     = anomaly_ratio >= ANOMALY_RATIO[proto]
+
+        self.logger.info(
+            'RMSE %s: max=%.4f  anomalous=%d/%d (%.0f%%)  threshold=%.4f',
+            proto.upper(), float(np.max(rmse_each)),
+            anomalous_count, len(rmse_each), anomaly_ratio * 100,
+            THRESHOLDS[proto],
+        )
         return is_attack, float(np.max(rmse_each))
 
 
