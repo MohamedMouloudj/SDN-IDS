@@ -472,7 +472,7 @@ class SimpleSwitch13(app_manager.RyuApp):
                     .filter(History.Ban_expiry > now)
                     .distinct()
                     .all())
-            return {row.Port for row in rows}
+            return {int(row.Port) for row in rows if row.Port and str(row.Port).isdigit()}
         finally:
             session.close()
 
