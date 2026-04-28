@@ -2,3 +2,12 @@
 __pycache__
 *.csv
 *.db
+mininet-topo/*.html*
+mininet-topo/*log*
+mininet-topo/*.pdf
+notebooks/*.ipynb_checkpoints
+*.h5
+*.pkl
+*.onnx
+ryu-controller/*.json
+

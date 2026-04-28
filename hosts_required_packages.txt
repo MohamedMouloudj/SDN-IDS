@@ -1,0 +1,7 @@
+# Install these on the VM so they are accessible by Mininet hosts
+
+pyftpdlib
+dnslib
+
+apache2-utils
+hping3
