@@ -1,0 +1,40 @@
+{% extends 'base.html' %} {% block title %}Login — SDN IDS{% endblock %} {%
+block content %}
+<div class="login-wrap">
+  <div class="login-card">
+    <div class="login-header">
+      <div class="login-logo">
+        <span class="logo-dot"></span><span class="logo-dot d2"></span
+        ><span class="logo-dot d3"></span>
+      </div>
+      <h1 class="login-title">SDN<span class="accent">IDS</span></h1>
+      <p class="login-sub">Intrusion Detection System</p>
+    </div>
+
+    <form method="POST" class="login-form">
+      <div class="field">
+        <label class="field-label">Email</label>
+        <input
+          class="field-input"
+          type="email"
+          name="email"
+          required
+          autofocus
+          placeholder="admin@gmail.com"
+        />
+      </div>
+      <div class="field">
+        <label class="field-label">Password</label>
+        <input
+          class="field-input"
+          type="password"
+          name="password"
+          required
+          placeholder="••••••••"
+        />
+      </div>
+      <button class="btn-login" type="submit">Access System</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

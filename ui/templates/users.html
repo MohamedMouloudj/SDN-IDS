@@ -1,0 +1,100 @@
+{% extends 'base.html' %} {% block title %}Users — SDN IDS{% endblock %} {%
+block content %}
+<div class="page-header">
+  <h2 class="page-title">User Management</h2>
+  <span class="admin-note"
+    >Admin only — viewer accounts have read-only dashboard access</span
+  >
+</div>
+
+<div class="users-wrap">
+  <!-- Create user form -->
+  <div class="form-card">
+    <div class="chart-title">Create Viewer Account</div>
+    <form method="POST" action="{{ url_for('create_user') }}" class="user-form">
+      <div class="field-row">
+        <div class="field">
+          <label class="field-label">Name</label>
+          <input
+            class="field-input"
+            type="text"
+            name="name"
+            required
+            placeholder="John Doe"
+          />
+        </div>
+        <div class="field">
+          <label class="field-label">Email</label>
+          <input
+            class="field-input"
+            type="email"
+            name="email"
+            required
+            placeholder="john@example.com"
+          />
+        </div>
+        <div class="field">
+          <label class="field-label">Password</label>
+          <input
+            class="field-input"
+            type="password"
+            name="password"
+            required
+            placeholder="••••••••"
+          />
+        </div>
+        <button class="btn-create" type="submit">Create</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Users table -->
+  <div class="table-card">
+    <div class="chart-title">Existing Accounts</div>
+    <div class="table-wrap">
+      <table class="events-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Name</th>
+            <th>Email</th>
+            <th>Role</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- hardcoded admin row -->
+          <tr>
+            <td class="mono">0</td>
+            <td>admin</td>
+            <td class="mono">admin@gmail.com</td>
+            <td><span class="badge-admin">ADMIN</span></td>
+            <td>—</td>
+          </tr>
+          {% for u in users %}
+          <tr>
+            <td class="mono">{{ u.id }}</td>
+            <td>{{ u.Name }}</td>
+            <td class="mono">{{ u.Email }}</td>
+            <td><span class="tag tag-type">Viewer</span></td>
+            <td>
+              <form
+                method="POST"
+                action="{{ url_for('delete_user', user_id=u.id) }}"
+                onsubmit="return confirm('Delete {{ u.Name }}?')"
+              >
+                <button class="btn-delete" type="submit">Delete</button>
+              </form>
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="5" class="empty">No viewer accounts yet.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

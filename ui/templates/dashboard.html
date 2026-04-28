@@ -1,0 +1,103 @@
+{% extends 'base.html' %} {% block title %}Dashboard — SDN IDS{% endblock %} {%
+block content %}
+<div class="page-header">
+  <h2 class="page-title">Live Dashboard</h2>
+  <div class="status-bar">
+    <span class="status-dot" id="status-dot"></span>
+    <span class="status-text" id="status-text">Connecting...</span>
+  </div>
+</div>
+
+<!-- Stat cards -->
+<div class="cards-grid">
+  <div class="stat-card">
+    <div class="stat-label">Total Attacks Detected</div>
+    <div class="stat-value" id="total-attacks">
+      {{ type_counts | tojson | count_values }}
+    </div>
+    <div class="stat-sub">all time</div>
+  </div>
+  <div class="stat-card card-red">
+    <div class="stat-label">Packets Dropped</div>
+    <div class="stat-value" id="dropped-count">{{ dropped_count }}</div>
+    <div class="stat-sub" id="dropped-size">
+      {{ "%.1f KB" | format(dropped_size / 1024) }}
+    </div>
+  </div>
+  <div class="stat-card card-amber">
+    <div class="stat-label">Active IP Bans</div>
+    <div class="stat-value" id="active-bans">--</div>
+    <div class="stat-sub">with expiry</div>
+  </div>
+  <div class="stat-card card-teal">
+    <div class="stat-label">Last Update</div>
+    <div class="stat-value stat-value-sm" id="last-update">--</div>
+    <div class="stat-sub">SSE stream</div>
+  </div>
+</div>
+
+<!-- Charts row -->
+<div class="charts-row">
+  <div class="chart-card">
+    <div class="chart-title">Attack Type Distribution</div>
+    <canvas id="chart-types"></canvas>
+  </div>
+  <div class="chart-card">
+    <div class="chart-title">Mitigation Actions</div>
+    <canvas id="chart-actions"></canvas>
+  </div>
+</div>
+
+<!-- Recent events table -->
+<div class="table-card">
+  <div class="table-header">
+    <div class="chart-title">Recent Attack Events</div>
+    <span class="table-badge" id="table-badge">live</span>
+  </div>
+  <div class="table-wrap">
+    <table class="events-table" id="events-table">
+      <thead>
+        <tr>
+          <th>Time</th>
+          <th>Type</th>
+          <th>Protocol</th>
+          <th>Attacker</th>
+          <th>Victim</th>
+          <th>Port</th>
+          <th>Action</th>
+          <th>Ban Expiry</th>
+        </tr>
+      </thead>
+      <tbody id="events-body">
+        {% for r in recent %}
+        <tr>
+          <td class="mono">{{ r.Timestamp | format_ts }}</td>
+          <td><span class="tag tag-type">{{ r.Attack_type or '-' }}</span></td>
+          <td class="mono">{{ r.Protocole or '-' }}</td>
+          <td class="mono">{{ r.Attacker or '-' }}</td>
+          <td class="mono">{{ r.Victim or '-' }}</td>
+          <td class="mono">{{ r.Port or '-' }}</td>
+          <td>
+            <span class="tag tag-action tag-{{ r.Action or '' }}"
+              >{{ r.Action or '-' }}</span
+            >
+          </td>
+          <td class="mono">--</td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="8" class="empty">No attack events recorded yet.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %} {% block scripts %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+  const initialTypes   = {{ type_counts | safe }};
+  const initialActions = {{ action_counts | safe }};
+</script>
+<script src="{{ url_for('static', filename='dashboard.js') }}"></script>
+{% endblock %}
