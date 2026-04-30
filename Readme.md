@@ -227,4 +227,35 @@ To retrain models locally, follow the steps inside each notebook in order:
 1. `train_autoencoders.ipynb` - anomaly detection models (ICMP, TCP, UDP)
 2. `train_compare_classifiers.ipynb` - RF, SVM and XGBoost comparison
 
-Ypu can find all my resulted models in [this drive folder](https://drive.google.com/drive/folders/1Gm4-iaPYOwlLjYZqSoaxU-h_UOzHFz6h?usp=sharing)
+You can find all my resulted models in [this drive folder](https://drive.google.com/drive/folders/1Gm4-iaPYOwlLjYZqSoaxU-h_UOzHFz6h?usp=sharing)
+
+## UI Dashboard
+
+The `ui` module provides a Flask-based web interface for the SDN IDS dashboard. It includes real-time statistics streaming and an admin interface for user management.
+
+### Starting the UI
+
+Make sure you have the UI dependencies installed (e.g., `flask`, `flask-login`, `sqlalchemy`). Note that the UI requires Python 3.11+.
+
+To start the dashboard, run:
+
+```bash
+cd ui
+uv sync
+
+# or just install the packages using pip
+uv pip install .
+
+uv run ../ui/app.py
+```
+
+The app should be running on `http://127.0.0.1:5000`.
+For user, there should be a default created admin:
+- Email: admin@gmail.com
+- password: admin
+
+You can change this from the code in `models.py`, I did not extend the app to handle proper auth to the app because it is not the purpose of this project.
+
+## Conclusion
+
+This project implements an intelligent anomaly based Intrusion Detection System (IDS) designed for Software-Defined Networks (SDN). By leveraging Mininet for network simulation and the RYU controller for traffic monitoring, the system securely collects and analyzes network flows. It utilizes a two-stage-based Machine Learning pipeline starting with Autoencoders for anomaly detection, followed by classifiers like Random Forest for specific attack categorization. Completed with a Flask-based real-time dashboard, this project provides a comprehensive, end-to-end environment for researching, detecting, and observing network attacks in modern SDN architectures.
