@@ -8,7 +8,7 @@ The core components consist of:
 - **Machine Learning Pipeline**: Uses a two-stage process featuring Autoencoders to detect anomalies and Random Forest classifiers to categorize specific attack types.
 - **Flask Dashboard**: A web-based UI that visualizes network statistics, logged attacks, and system history.
 
-This project was realized as a result of my internship at Ericsson, 01-04 to 01-05 2026
+This project was realized as a result of my internship at Ericsson, 01-03 to 01-05 2026
 
 ## Requirements
 
