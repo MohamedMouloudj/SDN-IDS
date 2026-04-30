@@ -1,3 +1,13 @@
+## Overview
+
+This project is an end-to-end framework for simulating and observing a Machine Learning-based Intrusion Detection System (IDS) within a Software-Defined Network (SDN). It provides a complete environment to generate traffic, monitor network behavior, and detect malicious attacks in real-time.
+
+The core components consist of:
+- **Mininet**: Simulates the network topology, normal hosts, and attackers.
+- **RYU Controller**: Monitors network applications, extracts flow telemetry, and enforces routing rules.
+- **Machine Learning Pipeline**: Uses a two-stage process featuring Autoencoders to detect anomalies and Random Forest classifiers to categorize specific attack types.
+- **Flask Dashboard**: A web-based UI that visualizes network statistics, logged attacks, and system history.
+
 ## Requirements
 
 1. Install python (preferable python3.10) on system wide level
@@ -258,4 +268,4 @@ You can change this from the code in `models.py`, I did not extend the app to ha
 
 ## Conclusion
 
-This project implements an intelligent anomaly based Intrusion Detection System (IDS) designed for Software-Defined Networks (SDN). By leveraging Mininet for network simulation and the RYU controller for traffic monitoring, the system securely collects and analyzes network flows. It utilizes a two-stage-based Machine Learning pipeline starting with Autoencoders for anomaly detection, followed by classifiers like Random Forest for specific attack categorization. Completed with a Flask-based real-time dashboard, this project provides a comprehensive, end-to-end environment for researching, detecting, and observing network attacks in modern SDN architectures.
+This project successfully demonstrates the integration of intelligent anomaly-based Intrusion Detection Systems (IDS) within a Software-Defined Network (SDN). By combining Mininet for realistic network simulation, RYU for flow control, and a two-stage Machine Learning pipeline (Autoencoders for initial anomaly detection and Random Forest for attack classification), the system effectively isolates malicious traffic. Complete with a real-time web dashboard, this repository serves as a comprehensive tool for researching network security concepts and developing robust, AI-driven mitigation techniques for modern SDN architectures.
